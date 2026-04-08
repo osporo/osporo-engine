@@ -1,193 +1,152 @@
-# ADR-006: Business Source Licence for the Open Core Model
+# ADR-006: Apache 2.0 Licensing for Open Core Strategy
 
 **Status:** Accepted  
 **Date:** 2026-03-12  
 **Author:** Wahina Prince Chabalala  
-**Deciders:** Wahina Prince Chabalala  
+**Deciders:** Wahina Prince Chabalala
 
 ---
 
 ## Context
 
-Osporo is an open core product. The engine and reference frontend are publicly
-available on GitHub. A business — Osporo Cloud — is built on top of this open
-source foundation by offering the engine as a managed, hosted service.
+Osporo is an open core product. The engine and reference frontend are
+publicly available on GitHub. A commercial offering — Osporo Cloud —
+will be built on top of this foundation as a managed, hosted service.
 
-This creates a fundamental licensing tension: the code must be open enough to
-build a developer community and earn trust through transparency, but protected
-enough that a well-resourced competitor cannot clone the repository and launch
-a directly competing hosted service without cost or contribution.
+A key early decision is how the core repositories should be licensed.
 
-This tension is not hypothetical. It has played out repeatedly in the open
-source infrastructure space. HashiCorp (Terraform), Elasticsearch, MongoDB,
-and Redis all navigated versions of this problem and each made different
-choices at different points in their lifecycle. The licensing decision made at
-inception shapes the community relationship for the life of the project.
+Two competing forces influence this decision:
+
+- **Adoption and community growth** require a licence that is widely
+  understood, unambiguous, and trusted by developers and organisations.
+- **Commercial protection** suggests restricting the ability for third
+  parties to offer Osporo as a competing hosted service.
+
+Many infrastructure companies have faced this trade-off. Companies such
+as Frappe, GitLab have adopted
+source-available licences (e.g. BUSL, SSPL) to protect their cloud
+businesses after initially using permissive licences.
+
+However, these licence changes often occurred after significant community
+adoption, and in some cases resulted in ecosystem fragmentation or forks.
+
+At Osporo's current stage, the primary risk is not competition from large
+platform providers, but lack of adoption, limited community engagement,
+and insufficient real-world usage.
 
 ---
 
 ## Decision
 
-**`osporo-engine` and `osporo-frontend` will be licenced under the Osporo
-Source Licence 1.0, a custom licence derived from the Business Source
-Licence 1.1 (BUSL-1.1).**
+**`osporo-engine` and `osporo-frontend` will be licensed under the
+'Apache License 2.0'**
 
-BUSL 1.1 was adopted as the foundation because it is the most credible
-source-available licence in the infrastructure space, with adoption by
-HashiCorp, CockroachDB, and Sentry establishing it as a known and
-respected model. However, BUSL's standard Additional Use Grant language
-— centred on "competing services" — was too vague for Osporo's specific
-protection requirement.
+**`osporo-docs` will be licensed under the MIT License**
 
-The core ambiguity in standard BUSL is the agency model: an agency
-running a single Osporo instance to host fifty client marketplaces looks
-structurally similar to a SaaS operator running a single instance for
-fifty paying subscribers. Standard BUSL does not cleanly distinguish
-between them. The Osporo Source Licence 1.0 resolves this by introducing
-defined terms — Managed Use and Self-Service Use — and by anchoring the
-prohibition on what is being sold (access to the Licensed Work's
-functionality) rather than on how provisioning is delivered.
-
-The practical consequence of deriving from rather than using verbatim
-BUSL is that automated licence scanners may not recognise it and some
-legal reviewers will flag it as non-standard. This is an accepted
-tradeoff — the precision of the restriction is worth the scanner
-recognition cost.
-
-The licence includes:
-- A Managed Use / Self-Service Use distinction with explicit definitions
-- A prohibition anchored on primary value delivered, not provisioning
-  method, closing the "manual SaaS" loophole
-- A patent grant mirroring Apache 2.0
-- A termination clause providing automatic rights termination on violation
-- A Change Date of four years per version, converting to Apache 2.0
-
-osporo-docs is licenced under MIT. Documentation should be freely
-copyable and redistributable without restriction.
-
-osporo-cloud is proprietary and not publicly released.
+**`osporo-cloud` will remain proprietary and will not be publicly released.**
 
 ---
 
 ## Reasons For This Decision
 
-### 1. MIT and Apache 2.0 leave the business unprotected
+### 1. Adoption is the primary constraint at this stage
 
-Permissive licences (MIT, Apache 2.0) grant anyone the right to use the code
-for any purpose, including building a directly competing hosted service. A
-well-funded competitor who clones the repository and offers Osporo-as-a-Service
-with a larger marketing budget is a real risk under a permissive licence.
+Osporo's success depends on developers and agencies choosing to use,
+extend, and contribute to the platform. A permissive, widely recognised
+licence removes friction from:
 
-This is not theoretical. Amazon's history with Elasticsearch — running
-Amazon Elasticsearch Service using Elastic's open source code without
-contributing back or paying for licences — is the canonical example of why
-infrastructure companies with permissive licences are vulnerable to large
-platform competitors.
+- contributing to the codebase
+- adopting Osporo in commercial projects
+- integrating Osporo into existing systems
 
-Osporo is not yet large enough to be vulnerable to Amazon. But establishing
-the correct licence boundary at inception is easier than changing it later —
-licence changes on established open source projects damage community trust
-significantly (as HashiCorp discovered when they changed Terraform's licence
-after years of MIT).
+Custom or source-available licences introduce uncertainty. Developers may
+avoid contributing or adopting the project if they do not clearly
+understand the legal boundaries.
 
-### 2. GPL/AGPL is too restrictive for the target audience
+---
 
-Copyleft licences (GPL, AGPL) require derivative works to be distributed under
-the same licence. For Osporo's target audience — developers and agencies building
-marketplace products for clients — this creates a significant problem. An agency
-that customises `osporo-frontend` for a client's marketplace and deploys it would
-potentially be required to open source their customisations under AGPL.
+### 2. Apache 2.0 provides clarity with minimal downside
 
-This is unacceptable for commercial client work. A licence that legal departments
-at agencies flag as a risk is a licence that prevents adoption. Osporo's growth
-depends on agencies and developers choosing it for client projects — the licence
-cannot create legal uncertainty for that use case.
+Apache 2.0 is a well-understood, OSI-approved licence that:
 
-### 3. BUSL protects exactly the use case that matters
+- permits commercial use, modification, and redistribution
+- includes an explicit patent grant
+- is widely accepted by both individual developers and enterprises
 
-BUSL's "Additional Use Grant" can be written to precisely define what is
-permitted and what requires a commercial licence. Osporo's grant is written to
-protect the one use case that constitutes a direct competitive threat: operating
-a hosted multi-tenant marketplace service for third parties.
+Compared to MIT, Apache 2.0 provides additional legal protection (notably
+around patents) without introducing meaningful complexity for users.
 
-Everything else — self-hosting, client deployments, forks, modifications,
-internal use — is explicitly permitted. The developer community can use, extend,
-and build on Osporo without encountering the licence restriction in normal usage.
-Only the specific use case of launching a competing SaaS hits the boundary.
+---
 
-### 4. The four-year Change Date maintains long-term community trust
+### 3. Early-stage competitive risk is low
 
-BUSL is sometimes criticised as "not really open source" because the commercial
-use restriction is technically not OSI-compliant. The Change Date addresses this
-directly: every version of Osporo will eventually become fully open source under
-Apache 2.0. The restriction is temporary, not permanent.
+The risk of a large company forking Osporo and launching a competing
+hosted service exists in theory, but is not a realistic near-term concern.
 
-Four years is the chosen window because it represents a reasonable commercial
-exclusivity period for a given version — long enough to build a viable business
-on it, not so long that the community feels the code is permanently withheld.
-By the time a version's restriction expires, Osporo Cloud will be competing on
-execution, reliability, support, and brand — not on code exclusivity.
+Large platform providers typically move when:
 
-### 5. Precedent from respected infrastructure companies
+- a market is validated
+- demand is proven
+- the product has achieved meaningful adoption
 
-BUSL was created by MariaDB and has been adopted by HashiCorp (Terraform, Vault,
-Consul), CockroachDB, and Sentry. These are credible, developer-respected
-infrastructure companies. Their adoption of BUSL demonstrates that the licence
-is viable in the developer community and does not prevent open source adoption
-at scale. Developers who evaluate Osporo will be familiar with BUSL from these
-precedents.
+At Osporo's current stage, the dominant risk is lack of traction, not
+commoditisation.
+
+---
+
+### 4. Execution is a stronger moat than licensing
+
+By choosing a permissive license, Osporo explicitly does not rely on
+licence restrictions as its primary form of competitive protection.
+
+Instead, long-term differentiation will come from:
+
+- product quality and velocity
+- developer experience (SDK, CLI, documentation)
+- hosted offering reliability and ease of use (Osporo Cloud)
+- community, ecosystem, and brand
+
+This aligns with the approach taken by companies such as GitLab, Supabase and Vercel which compete on execution rather than code exclusivity.
+
+---
+
+### 5. Maximising career and learning outcomes
+
+Osporo is not only a product, but also a vehicle for:
+
+- developing deep system design expertise
+- building publicly visible technical work
+- creating opportunities through content, community, and networking
+
+A permissive licence maximises exposure, usage, and contribution,
+which in turn maximises these outcomes.
 
 ---
 
 ## Alternatives Considered
 
-### BUSL 1.1 verbatim
+### Business Source Licence (BUSL)
 
-**Evaluated but insufficient.** BUSL 1.1 was the starting point and
-remains the foundation. The standard Additional Use Grant language was
-assessed and found to be too vague for Osporo's specific protection
-requirement — specifically, it does not cleanly distinguish between an
-agency hosting client marketplaces (permitted) and a SaaS operator
-selling access to marketplace functionality (prohibited). A derivative
-licence — Osporo Source Licence 1.0 — was created to introduce the
-Managed Use / Self-Service Use distinction and anchor the prohibition
-on primary value delivered rather than provisioning method. The full
-BUSL 1.1 terms are otherwise preserved.
+**Rejected.** While BUSL provides protection against competing hosted
+services, it introduces complexity and ambiguity that can discourage
+adoption. Customising BUSL further increases legal uncertainty and
+reduces recognisability.
 
-### MIT Licence
-
-**Rejected.** Provides no protection against a competitor offering Osporo as
-a hosted service. The entire business model of Osporo Cloud is at risk under
-a permissive licence with sufficient competitive pressure.
-
-### Apache 2.0
-
-**Rejected** for the same reasons as MIT, with the addition that Apache 2.0's
-patent grant provisions, while valuable, do not address the competitive risk.
+---
 
 ### GNU Affero General Public Licence (AGPL)
 
-**Rejected.** Copyleft requirements create legal uncertainty for agencies doing
-client work — the primary developer audience for Osporo. Adoption risk outweighs
-the protection benefit.
+**Rejected.** Strong copyleft requirements create friction for agencies
+and commercial users, particularly when building client solutions.
+Adoption risk outweighs protection benefits.
 
-### Server Side Public Licence (SSPL)
+---
 
-**Rejected.** SSPL was created by MongoDB and is more restrictive than BUSL.
-It requires that anyone offering the software as a service must open source their
-entire stack — infrastructure code, tooling, everything. This is widely regarded
-as unworkable and has damaged MongoDB's community relationship. SSPL is more
-controversial than BUSL and provides no meaningful additional protection for
-Osporo's specific concern.
+### MIT Licence
 
-### Dual Licence (Community Edition + Commercial Edition)
-
-**Rejected at inception.** Maintaining two separate codebases — a stripped-down
-community edition and a full commercial edition — requires splitting engineering
-effort and creates a permanent community resentment dynamic ("the real features
-are behind the paywall"). BUSL with a clear Additional Use Grant achieves the
-same commercial protection with a single codebase, no feature splitting, and a
-cleaner community relationship.
+**Considered.** MIT provides maximum simplicity, but lacks the explicit
+patent protections included in Apache 2.0. Apache 2.0 was selected as a
+slightly more robust permissive alternative.
 
 ---
 
@@ -195,64 +154,50 @@ cleaner community relationship.
 
 ### Positive
 
-- The competitive use case (hosted MaaS competitors) is legally protected.
-- Self-hosting, client deployment, and agency use are explicitly permitted —
-  no friction for the primary developer audience.
-- The Change Date ensures no version is permanently restricted — long-term
-  community trust is maintained.
-- BUSL precedent from HashiCorp and others means developers recognise and
-  understand the licence.
-
-### Negative
-
-- BUSL is not OSI-approved. Some developers and organisations have policies
-  against using non-OSI licences. This will exclude a segment of potential
-  contributors and adopters.
-- The licence boundary requires clear documentation. Developers must understand
-  exactly what "offering as a hosted service" means in the Additional Use Grant
-  to know whether their use case is permitted. Ambiguity creates friction.
-- Future licence changes (if needed) would damage community trust. The BUSL
-  decision should be treated as a long-term commitment, not a revisable preference.
+- Zero ambiguity for developers and contributors
+- Maximum compatibility with commercial usage
+- Increased likelihood of adoption and community growth
+- Strong alignment with industry-standard open source practices
 
 ---
 
-## Additional Use Grant Text
+### Negative
 
-The following Additional Use Grant is included in the BUSL licence file:
+- No protection against competitors offering Osporo as a hosted service
+- Potential for forks or competing distributions
+- Competitive moat must be built through execution, not licensing
 
-> You may make production use of the Licensed Work, including use in a commercial
-> product or service, provided that your use does not include offering the Licensed
-> Work to third parties on a hosted or embedded basis in order to compete with
-> Osporo's paid versions of the Licensed Work.
->
-> For purposes of this licence, "offering the Licensed Work to third parties on a
-> hosted basis" means operating the Licensed Work as a multi-tenant marketplace
-> infrastructure service where third parties are the marketplace operators.
->
-> Permitted uses include: self-hosting for your own marketplace, deploying for a
-> client's marketplace as part of professional services, forking and modifying for
-> either of the above purposes.
+---
+
+## Strategic Implications
+
+By adopting Apache 2.0, Osporo explicitly commits to:
+
+- competing on product quality and developer experience
+- building a strong ecosystem (SDK, CLI, integrations)
+- treating open source as a growth and distribution strategy, not a
+  controlled asset
+
+The success of Osporo will depend on becoming the **default and most
+trusted implementation**, rather than the only available one.
 
 ---
 
 ## Revisit Criteria
 
-This decision should be revisited when:
+This decision should be revisited if:
 
-- The open source community's reaction to BUSL measurably reduces adoption to
-  a degree that undermines the business more than the competitive protection
-  helps it
-- Osporo Cloud reaches a scale where brand, support, and execution moat are
-  sufficient protection and full Apache 2.0 conversion would meaningfully
-  accelerate community growth
-- A specific large enterprise customer or integration partner requires an OSI-
-  compliant licence as a condition of adoption
+- Osporo achieves significant adoption and becomes a clear target for
+  direct SaaS competition
+- competitive pressure begins to materially impact the viability of
+  Osporo Cloud
+- a transition to a different licensing model can be made without
+  damaging community trust
 
 ---
 
 ## References
 
-- [Business Source Licence 1.1 full text](https://mariadb.com/bsl11/)
-- HashiCorp's rationale for adopting BUSL for Terraform (2023)
-- [Elastic's licence change announcement and community response](https://www.elastic.co/blog/why-license-change)
-- ADR-005: Build vs Buy Decisions (commercial context)
+- HashiCorp licensing changes (2023)
+- Elastic licence change and OpenSearch fork
+- ADR-005: Build vs Buy Decisions
