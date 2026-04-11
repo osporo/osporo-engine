@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @RestController
-@RequestMapping("api")
 public class OsporoEngineApplication {
 
 	public static void main(String[] args) {
