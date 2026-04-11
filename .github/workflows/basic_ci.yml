@@ -44,7 +44,6 @@ jobs:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/osporo_test
           SPRING_DATASOURCE_USERNAME: ${{ secrets.DB_USERNAME }}
           SPRING_DATASOURCE_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          JWT_SECRET: ci-test-secret-not-used-in-production
         run: ./gradlew clean build --no-daemon
 
       - name: Upload test results
