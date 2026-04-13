@@ -38,6 +38,7 @@ out/
 
 ### Others ###
 project_structure.txt
+build_order.txt
 
 # env files (can opt-in for committing if needed)
 .env*
