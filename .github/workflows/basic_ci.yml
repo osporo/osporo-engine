@@ -15,12 +15,12 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_DB: osporo_test
-          POSTGRES_USER: ${{ secrets.DB_USERNAME }}
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U ${{ secrets.DB_USERNAME }} -d osporo_test"
+          --health-cmd="pg_isready -U test_user -d osporo_test"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -42,8 +42,8 @@ jobs:
       - name: Build and test
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/osporo_test
-          SPRING_DATASOURCE_USERNAME: ${{ secrets.DB_USERNAME }}
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          SPRING_DATASOURCE_USERNAME: test_user
+          SPRING_DATASOURCE_PASSWORD: test_pass
         run: ./gradlew clean build --no-daemon
 
       - name: Upload test results
