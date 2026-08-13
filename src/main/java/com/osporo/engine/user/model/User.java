@@ -94,4 +94,12 @@ public class User {
         current.remove(role);
         setRolesList(current);
     }
+
+    public boolean isSuspended() {
+        return suspendedAt != null;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
 }
