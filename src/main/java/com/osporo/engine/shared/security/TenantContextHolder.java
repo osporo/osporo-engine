@@ -3,9 +3,11 @@ package com.osporo.engine.shared.security;
 import com.osporo.engine.shared.enums.ErrorCode;
 import com.osporo.engine.shared.exception.OsporoException;
 import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
+@Component
 public class TenantContextHolder {
 
     private static final ThreadLocal<UUID> tenantContext = new ThreadLocal<>();
