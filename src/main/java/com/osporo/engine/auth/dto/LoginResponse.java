@@ -10,6 +10,6 @@ public record LoginResponse(
         String refreshToken,
 
         @JsonProperty("expires_in")
-        int expiresIn
+        Long expiresIn
 ) {
 }
