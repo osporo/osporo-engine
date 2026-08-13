@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TYPE role_type AS ENUM ( 'OSPORO_ADMIN', 'MARKETPLACE_OWNER', 'MARKETPLACE_STAFF', 'BUYER', 'SELLER' );
+
 
 CREATE TABLE users (
     id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -9,7 +9,7 @@ CREATE TABLE users (
     password_hash       VARCHAR(255)    NOT NULL,
     display_name        VARCHAR(100),
     avatar_url          TEXT,
-    roles               role_type[]     NOT NULL DEFAULT ARRAY[ 'BUYER' ]::role_type[],
+    roles               TEXT[]          NOT NULL DEFAULT ARRAY[ 'BUYER' ],
     stripe_connect_id   VARCHAR(255),
     suspended_at        TIMESTAMPTZ,
     deleted_at          TIMESTAMPTZ,
@@ -17,5 +17,16 @@ CREATE TABLE users (
     updated_at          TIMESTAMPTZ     NOT NULL,
     UNIQUE( tenant_id, email )
 );
+
+ALTER TABLE users ADD CONSTRAINT valid_role_types
+    CHECK (
+        roles <@ ARRAY[
+            'BUYER',
+            'SELLER',
+            'MARKETPLACE_STAFF',
+            'MARKETPLACE_OWNER',
+            'OSPORO_ADMIN'
+        ]::TEXT[]
+    );
 
 CREATE INDEX idx_users_tenant_id ON users(tenant_id);
