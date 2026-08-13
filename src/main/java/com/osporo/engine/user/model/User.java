@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 @Entity
 @Table(name = "users")
 @Getter
@@ -40,11 +43,7 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
-    @Column(
-            name = "roles",
-            columnDefinition = "role_type[]",
-            nullable = false
-    )
+    @Column(nullable = false)
     private String[] roles;
 
     @Column(name = "stripe_connect_id")
