@@ -25,6 +25,9 @@ public class User {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
     @Column(nullable = false)
     private String email;
 
@@ -44,7 +47,7 @@ public class User {
     )
     private String[] roles;
 
-    @Column(name = "stripe_connect_id", nullable = false)
+    @Column(name = "stripe_connect_id")
     private String stripeConnectId;
 
     @Column(name = "suspended_at")
