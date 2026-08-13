@@ -1,0 +1,30 @@
+# Build tool directories
+.gradle/
+build/
+target/
+.mvn/
+
+# IDE and Editor files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Version control
+.git/
+.gitignore
+
+# Logs and local properties
+*.log
+local.properties
+.env
+.env.local
+.env.docker

@@ -26,6 +26,14 @@ services:
     container_name: osporo-engine
     env_file:
       - .env.docker
+    environment:
+      # Map the .env.docker variables to what application.properties expects
+      SPRING_DATASOURCE_URL: ${DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TOKEN_EXPIRY: ${JWT_ACCESS_TOKEN_EXPIRY}
+      JWT_REFRESH_TOKEN_EXPIRY: ${JWT_REFRESH_TOKEN_EXPIRY}
     depends_on:
       db:
         condition: service_healthy
