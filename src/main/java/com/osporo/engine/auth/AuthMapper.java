@@ -16,7 +16,7 @@ public class AuthMapper {
         return new RegisterResponse(
             user.getId(),
             user.getEmail(),
-            user.getRolesList().stream()
+            user.getRoles().stream()
                 .map(RoleType::name)
                 .collect(Collectors.toList())
         );

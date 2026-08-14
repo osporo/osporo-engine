@@ -93,7 +93,7 @@ public class AuthService {
         user.setTenantId(tenantId);
         user.setEmail(request.email().toLowerCase().strip());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setRolesList(List.of(RoleType.valueOf(defaultRole.name())));
+        user.setRoles(List.of(RoleType.valueOf(defaultRole.name())));
         user.setCreatedAt(OffsetDateTime.now());
         user.setUpdatedAt(OffsetDateTime.now());
 
@@ -178,8 +178,8 @@ public class AuthService {
 
     private TokenPair issueTokenPair(User user, UUID tenantId) {
         // Resolve permissions from the user's roles via tenant role config
-        List<String> permissions = resolvePermissions(user.getRolesList(), tenantId);
-        List<String> roleNames   = user.getRolesList().stream()
+        List<String> permissions = resolvePermissions(user.getRoles(), tenantId);
+        List<String> roleNames   = user.getRoles().stream()
             .map(RoleType::name)
             .collect(Collectors.toList());
 

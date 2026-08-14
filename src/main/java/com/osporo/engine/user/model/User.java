@@ -1,5 +1,6 @@
 package com.osporo.engine.user.model;
 
+import com.osporo.engine.shared.converter.RoleTypeListConverter;
 import com.osporo.engine.shared.enums.RoleType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -43,8 +44,13 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
-    @Column(nullable = false)
-    private String[] roles;
+    @Convert(converter = RoleTypeListConverter.class)
+    @Column(
+        name = "roles",
+        columnDefinition = "text[]",
+        nullable = false
+    )
+    private List<RoleType> roles;
 
     @Column(name = "stripe_connect_id")
     private String stripeConnectId;
@@ -61,37 +67,18 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    public List<RoleType> getRolesList() {
-        if (roles == null) return new ArrayList<>();
-        return Arrays.stream(roles)
-                .map(RoleType::valueOf)
-                .collect(Collectors.toList());
-    }
-
-    public void setRolesList(List<RoleType> roleList) {
-        this.roles = roleList == null
-                ? new String[]{}
-                : roleList.stream()
-                  .map(RoleType::name)
-                  .toArray(String[]::new);
-    }
-
     public boolean hasRole(RoleType role) {
-        return getRolesList().contains(role);
+        return roles.contains(role);
     }
 
     public void addRole(RoleType role) {
-        List<RoleType> current = new ArrayList<>(getRolesList());
-        if (!current.contains(role)) {
-            current.add(role);
-            setRolesList(current);
+        if (!roles.contains(role)) {
+            roles.add(role);
         }
     }
 
     public void removeRole(RoleType role) {
-        List<RoleType> current = new ArrayList<>(getRolesList());
-        current.remove(role);
-        setRolesList(current);
+        roles.remove(role);
     }
 
     public boolean isSuspended() {
