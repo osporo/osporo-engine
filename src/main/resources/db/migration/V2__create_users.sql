@@ -1,7 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-
-
 CREATE TABLE users (
     id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id           UUID            NOT NULL REFERENCES tenants(id),
@@ -15,10 +13,9 @@ CREATE TABLE users (
     deleted_at          TIMESTAMPTZ,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ     NOT NULL,
-    UNIQUE( tenant_id, email )
-);
+    UNIQUE( tenant_id, email ),
 
-ALTER TABLE users ADD CONSTRAINT valid_role_types
+    CONSTRAINT valid_role_types
     CHECK (
         roles <@ ARRAY[
             'BUYER',
@@ -27,6 +24,7 @@ ALTER TABLE users ADD CONSTRAINT valid_role_types
             'MARKETPLACE_OWNER',
             'OSPORO_ADMIN'
         ]::TEXT[]
-    );
+    )
+);
 
 CREATE INDEX idx_users_tenant_id ON users(tenant_id);

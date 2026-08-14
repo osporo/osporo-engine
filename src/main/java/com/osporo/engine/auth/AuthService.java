@@ -14,6 +14,7 @@ import com.osporo.engine.auth.dto.LogoutRequest;
 import com.osporo.engine.auth.dto.RefreshRequest;
 import com.osporo.engine.auth.dto.RegisterRequest;
 import com.osporo.engine.auth.model.RefreshToken;
+import com.osporo.engine.shared.enums.Permission;
 import com.osporo.engine.shared.enums.RoleType;
 import com.osporo.engine.shared.enums.TenantStatus;
 import com.osporo.engine.shared.exception.AccountSuspendedException;
@@ -178,7 +179,8 @@ public class AuthService {
 
     private TokenPair issueTokenPair(User user, UUID tenantId) {
         // Resolve permissions from the user's roles via tenant role config
-        List<String> permissions = resolvePermissions(user.getRoles(), tenantId);
+        List<Permission> permissions = resolvePermissions(user.getRoles(), tenantId);
+        List<String> permissionsStringList = permissions.stream().map(Permission::name).collect(Collectors.toList());
         List<String> roleNames   = user.getRoles().stream()
             .map(RoleType::name)
             .collect(Collectors.toList());
@@ -188,7 +190,7 @@ public class AuthService {
             user.getId(),
             tenantId,
             roleNames,
-            permissions
+            permissionsStringList
         );
 
         // Generate refresh token — long lived, stored in database
@@ -208,13 +210,13 @@ public class AuthService {
         return new TokenPair(accessToken, refreshTokenValue, jwtService.getAccessTokenExpiry());
     }
 
-    private List<String> resolvePermissions(List<RoleType> roles, UUID tenantId) {
+    private List<Permission> resolvePermissions(List<RoleType> roles, UUID tenantId) {
         // Load all role configs for this tenant in one query
         List<TenantRoleConfig> configs = tenantRoleConfigRepository
             .findAllByTenantId(tenantId);
 
         // Build a map of role name → permission list
-        Map<RoleType, List<String>> permissionsByRole = configs.stream()
+        Map<RoleType, List<Permission>> permissionsByRole = configs.stream()
             .collect(Collectors.toMap(
                 TenantRoleConfig::getRoleName,
                 TenantRoleConfig::getPermissions
@@ -222,9 +224,9 @@ public class AuthService {
 
         // Union the permission sets across all of the user's roles
         // LinkedHashSet preserves order and deduplicates
-        Set<String> resolved = new LinkedHashSet<>();
+        Set<Permission> resolved = new LinkedHashSet<>();
         for (RoleType role : roles) {
-            List<String> rolePermissions = permissionsByRole.get(role);
+            List<Permission> rolePermissions = permissionsByRole.get(role);
             if (rolePermissions != null) {
                 resolved.addAll(rolePermissions);
             }

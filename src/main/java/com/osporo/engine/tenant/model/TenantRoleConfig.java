@@ -1,5 +1,7 @@
 package com.osporo.engine.tenant.model;
 
+import com.osporo.engine.shared.converter.PermissionListConverter;
+import com.osporo.engine.shared.enums.Permission;
 import com.osporo.engine.shared.enums.RoleType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -30,12 +32,13 @@ public class TenantRoleConfig {
     @Column(name = "role_name", nullable = false)
     private RoleType roleName;
 
+    @Convert(converter = PermissionListConverter.class)
     @Column(
         name = "permissions",
         columnDefinition = "text[]",
         nullable = false
     )
-    private List<String> permissions;
+    private List<Permission> permissions;
 
     @Column(name = "is_default", nullable = false)
     private boolean isDefault;
