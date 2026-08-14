@@ -60,9 +60,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             String token = authHeader.substring(7);
+            // log.debug("Token: {}", token);
 
             try {
                 Claims claims = jwtService.validateAndExtract(token);
+                // log.debug("Claims: {}", claims);
 
                 UUID tenantId = UUID.fromString(claims.get("tenant_id", String.class));
                 UUID userId   = UUID.fromString(claims.getSubject());
@@ -86,6 +88,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 tenantContextHolder.setTenantId(tenantId);
 
             } catch (JwtException | IllegalArgumentException e) {
+                // log.error(e.getMessage());
                 SecurityContextHolder.clearContext();
             }
 

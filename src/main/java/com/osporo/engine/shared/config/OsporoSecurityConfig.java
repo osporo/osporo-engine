@@ -41,6 +41,7 @@ public class OsporoSecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/v1/auth/register").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/auth/refresh").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/webhooks/stripe/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/listings").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/listings/search").permitAll()
