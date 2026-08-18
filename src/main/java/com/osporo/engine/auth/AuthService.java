@@ -180,10 +180,8 @@ public class AuthService {
     private TokenPair issueTokenPair(User user, UUID tenantId) {
         // Resolve permissions from the user's roles via tenant role config
         List<Permission> permissions = resolvePermissions(user.getRoles(), tenantId);
-        List<String> permissionsStringList = permissions.stream().map(Permission::name).collect(Collectors.toList());
-        List<String> roleNames   = user.getRoles().stream()
-            .map(RoleType::name)
-            .collect(Collectors.toList());
+        List<String> permissionsStringList = enumListToStringList(permissions);
+        List<String> roleNames = enumListToStringList(user.getRoles());
 
         // Generate access token — short lived, carries full permission set
         String accessToken = jwtService.generateAccessToken(
@@ -233,5 +231,9 @@ public class AuthService {
         }
 
         return new ArrayList<>(resolved);
+    }
+
+    private <E extends Enum<E>> List<String> enumListToStringList(List<E> enumList) {
+        return enumList.stream().map(Enum::name).collect(Collectors.toList());
     }
 }
