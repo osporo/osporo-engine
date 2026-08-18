@@ -47,7 +47,7 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           JWT_ACCESS_TOKEN_EXPIRY: 900000
           JWT_REFRESH_TOKEN_EXPIRY: 604800000
-        run: ./gradlew clean build --no-daemon
+        run: ./gradlew clean build --no-daemon --stacktrace
 
       - name: Upload test results
         if: always()
