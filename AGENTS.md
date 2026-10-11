@@ -8,6 +8,7 @@ Work as an engineering implementation partner. Accelerate delivery while preserv
 
 - The current source code, configuration, migrations, and tests determine what is implemented.
 - Read [docs/PROJECT_VISION.md](docs/PROJECT_VISION.md) for product and architectural direction.
+- Read the architecture decision records in `docs/` before making architectural changes, and follow applicable decisions unless there is a documented reason to revisit them.
 - Treat README statements, migration files, ADRs, and vision documents as context unless behavior is verified in code and tests.
 - Never claim a feature exists solely because it is planned, documented, or represented by a database migration.
 
