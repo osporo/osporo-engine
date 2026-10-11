@@ -205,6 +205,7 @@ public class AuthService {
 
         refreshTokenRepository.save(refreshToken);
 
+        // The API's expires_in value uses the configured access-token lifetime in seconds.
         return new TokenPair(accessToken, refreshTokenValue, jwtService.getAccessTokenExpiry());
     }
 

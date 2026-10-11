@@ -82,7 +82,7 @@ DB_URL=jdbc:postgresql://db:5432/osporo_db
 DB_USERNAME=osporo
 DB_PASSWORD=replace-with-your-own-password
 JWT_SECRET=replace-with-a-base64-encoded-random-signing-key
-JWT_ACCESS_TOKEN_EXPIRY=900000
+JWT_ACCESS_TOKEN_EXPIRY=900
 JWT_REFRESH_TOKEN_EXPIRY=604800
 ```
 
@@ -113,12 +113,12 @@ The application reads the following environment variables. Compose maps the `DB_
 | `SPRING_DATASOURCE_USERNAME` | PostgreSQL username. |
 | `SPRING_DATASOURCE_PASSWORD` | PostgreSQL password. |
 | `JWT_SECRET` | Base64-encoded signing key; at least 32 decoded bytes. |
-| `JWT_ACCESS_TOKEN_EXPIRY` | Access-token lifetime, currently interpreted as milliseconds. |
-| `JWT_REFRESH_TOKEN_EXPIRY` | Refresh-token lifetime, currently interpreted as seconds. |
+| `JWT_ACCESS_TOKEN_EXPIRY` | Access-token lifetime in seconds. |
+| `JWT_REFRESH_TOKEN_EXPIRY` | Refresh-token lifetime in seconds. |
 
 These properties have no defaults in `application.properties`.
 
-**Current expiry inconsistency:** access-token expiry is added to a millisecond timestamp, refresh-token expiry uses `plusSeconds`, and `expires_in` returns the raw access-expiry value. The example above gives a 15-minute access token and a seven-day refresh token. Clients should not assume `expires_in` is expressed in seconds. Existing CI and integration-test values are not consistent with these units.
+Both token lifetimes and the API's `expires_in` value use seconds. The example above gives a 15-minute access token and a seven-day refresh token. If upgrading from the earlier millisecond-based access-token configuration, change values such as `900000` to `900` in your environment files and deployment settings.
 
 ## Development
 

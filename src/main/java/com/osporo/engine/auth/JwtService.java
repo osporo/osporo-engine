@@ -4,6 +4,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.time.Instant;
 import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -33,13 +34,14 @@ public class JwtService {
         List<String> roles,
         List<String> permissions
     ) {
+        Instant issuedAt = Instant.now();
         return Jwts.builder()
             .subject(userId.toString())
             .claim("tenant_id", tenantId.toString())
             .claim("roles", roles)
             .claim("permissions", permissions)
-            .issuedAt(new Date())
-            .expiration(new Date(System.currentTimeMillis() + accessTokenExpiry))
+            .issuedAt(Date.from(issuedAt))
+            .expiration(Date.from(issuedAt.plusSeconds(accessTokenExpiry)))
             .signWith(getSigningKey())
             .compact();
     }
@@ -62,6 +64,7 @@ public class JwtService {
                 .getPayload();
     }
 
+    // Both configured token lifetimes are expressed in seconds.
     public long getAccessTokenExpiry() { return accessTokenExpiry; }
 
     public long getRefreshTokenExpiry() { return refreshTokenExpiry; }
