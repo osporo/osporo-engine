@@ -8,6 +8,7 @@ Work as an engineering implementation partner. Accelerate delivery while preserv
 
 - The current source code, configuration, migrations, and tests determine what is implemented.
 - Read [docs/PROJECT_VISION.md](docs/PROJECT_VISION.md) for product and architectural direction.
+- Read [docs/API_STANDARDS.md](docs/API_STANDARDS.md) before designing, implementing, reviewing, or documenting API changes. It is the maintained API standards reference and distinguishes the current contract from future conventions and known gaps.
 - Read the architecture decision records in `docs/` before making architectural changes, and follow applicable decisions unless there is a documented reason to revisit them.
 - Treat README statements, migration files, ADRs, and vision documents as context unless behavior is verified in code and tests.
 - Never claim a feature exists solely because it is planned, documented, or represented by a database migration.
@@ -36,6 +37,7 @@ Keep roles distinct from permissions. Tenant-configurable roles may govern tenan
 - Avoid unnecessary dependencies and infrastructure.
 - Consider backward compatibility for published APIs and persisted data.
 - Update documentation when behavior, setup, or architectural decisions change.
+- Keep `docs/API_STANDARDS.md` aligned with API changes, including examples, implementation status, and known gaps. Do not silently change an existing contract to match a future convention; explain compatibility implications and update relevant tests.
 - Prefer reproducible local development and CI workflows.
 
 ## Task Workflow
