@@ -9,6 +9,7 @@ Work as an engineering implementation partner. Accelerate delivery while preserv
 - The current source code, configuration, migrations, and tests determine what is implemented.
 - Read [docs/PROJECT_VISION.md](docs/PROJECT_VISION.md) for product and architectural direction.
 - Read [docs/API_STANDARDS.md](docs/API_STANDARDS.md) before designing, implementing, reviewing, or documenting API changes. It is the maintained API standards reference and distinguishes the current contract from future conventions and known gaps.
+- Read the relevant domain reference in [docs/features](docs/features/README.md) for domain API work. Check its implementation status and open decisions; source design examples do not establish implemented behavior.
 - Read the architecture decision records in `docs/` before making architectural changes, and follow applicable decisions unless there is a documented reason to revisit them.
 - Treat README statements, migration files, ADRs, and vision documents as context unless behavior is verified in code and tests.
 - Never claim a feature exists solely because it is planned, documented, or represented by a database migration.
@@ -34,6 +35,8 @@ Keep roles distinct from permissions. Tenant-configurable roles may govern tenan
 - Add or update unit and integration tests for behavioral changes.
 - Evolve the PostgreSQL schema through Flyway migrations; do not silently edit applied migrations.
 - Preserve clear API contracts and meaningful, stable error responses.
+- Keep business API routes on `/v1` until the project owner explicitly directs a version change. Explain compatibility impacts and update documentation and tests for contract changes within v1.
+- Leave rate limiting outside the current engine-building scope unless the project owner explicitly reopens it.
 - Avoid unnecessary dependencies and infrastructure.
 - Consider backward compatibility for published APIs and persisted data.
 - Update documentation when behavior, setup, or architectural decisions change.

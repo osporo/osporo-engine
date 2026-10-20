@@ -2,7 +2,11 @@
 
 Last reviewed against the repository: 2026-10-17.
 
+Development scope updated: 2026-10-19. The API remains on `/v1` until the project owner explicitly directs a version change. Rate limiting is outside the current engine-building scope; do not introduce it as an API requirement or implementation task unless that scope is explicitly reopened.
+
 This is the maintained reference for Osporo Engine API conventions. It combines the original **Osporo API Standards v1.0** Word document with the current controllers, DTOs, security configuration, services, migrations, and tests. Maintain this file alongside API changes rather than treating the original document as a frozen specification.
+
+Domain-specific API designs from **Osporo API v1.docx** are maintained in [docs/features](features/README.md), with implementation status and unresolved details called out separately. Read the relevant domain reference alongside these shared standards.
 
 **Current contract** describes behavior present in the source; linked tests provide evidence where available, not a claim that every behavior has test coverage. **Convention for new work** carries forward design guidance without claiming it is implemented. **Gap** identifies missing or inconsistent behavior. Source and tests determine what is actually implemented; a gap is not authorization to redesign or change a published contract.
 
@@ -22,7 +26,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 
 The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. A matcher is not an endpoint implementation: there are no corresponding domain controllers for listings, categories, orders, payments, messaging, or moderation in the reviewed source. Likewise, migrations and permission constants do not establish endpoint availability.
 
-**Convention for new work:** keep the version in the URL prefix. Additive, optional fields and new endpoints can remain in the current version when they preserve existing behavior. Removing fields, changing semantics, or introducing required inputs requires an explicit compatibility decision and normally a new prefix such as `/v2`. Document a deprecation window before retiring a supported version; no fixed window is currently defined.
+**Convention for new work:** keep business API routes under `/v1` throughout current engine development, including approved contract changes. Do not introduce `/v2` or another version until the project owner explicitly directs it. Continue to explain compatibility impacts when removing fields, changing semantics, or introducing required inputs, and update clients, documentation, and tests as applicable. Remaining on v1 does not make those changes backward compatible. A release-versioning and deprecation policy can be defined when the owner decides to introduce another API version.
 
 Deployments supply their own origin. `https://api.osporo.dev/v1/` in the original document is an illustrative hosted address, not a verified deployment or a required self-hosted hostname. Tenant identifiers are not part of current route paths.
 
@@ -42,6 +46,8 @@ An unauthenticated tenant header selects a tenant; it does not establish identit
 User identities belong to one tenant. The database enforces email uniqueness on `(tenant_id, email)`; registration and login use tenant-scoped repository methods. Do not introduce a shared cross-tenant account implicitly.
 
 **Gaps:** the original document's JWT-only tenant rule does not describe unauthenticated auth flows. There is no gateway tenant-mismatch rejection or automatic tenant predicate applied to every repository query. For example, `UserService.getUser` uses an unscoped ID lookup; it is not currently exposed by a user controller. New workflows must not assume every service or repository is already isolated.
+
+**Agreed follow-up:** make `UserService.getUser` tenant-scoped and verify that a caller cannot retrieve another tenant's user. This remains pending; documenting the follow-up does not mean the service has been fixed.
 
 Evidence: [JWT filter](../src/main/java/com/osporo/engine/shared/security/JwtAuthenticationFilter.java), [tenant context](../src/main/java/com/osporo/engine/shared/security/TenantContextHolder.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [user service](../src/main/java/com/osporo/engine/user/UserService.java), [users migration](../src/main/resources/db/migration/V2__create_users.sql).
 
@@ -158,7 +164,6 @@ Validation message wording may vary. Error responses currently contain no `reque
 | 404 | `TENANT_NOT_FOUND`; `LISTING_NOT_FOUND` exception exists without a listing endpoint |
 | 409 | `EMAIL_ALREADY_EXISTS`; convention for conflicts with current resource state |
 | 422 | Convention for structurally valid requests violating a business rule; no current handler establishes a workflow using it |
-| 429 | Deferred rate-limit behavior; enum value alone does not enforce a limit |
 | 500 | Unexpected exceptions |
 
 For new endpoints, keep 409 for resource-state conflicts and 422 for other business-rule failures. The original document used an already-sold listing for both; define one status per concrete error and test it. Tenant-owned resources outside the caller's scope should return 404 without revealing another tenant's resource.
@@ -175,18 +180,16 @@ Evidence: [global exception handler](../src/main/java/com/osporo/engine/shared/e
 
 There is no implementation of this mechanism or these financial routes. Before exposing them, define tenant/caller and operation scoping, behavior for a reused key with a different payload, concurrent duplicate requests, and atomicity with the business operation. The original retention rule alone does not resolve those decisions. Do not claim an arbitrary POST is safe to retry today.
 
-## 9. Tracing and rate limiting
+## 9. Request tracing
 
 **Current contract:** `Meta.simple()` and `Meta.paginated()` generate a UUID when constructing metadata. There is no shared per-request correlation ID propagated to error bodies, `X-Request-ID`, or logs. A metadata UUID is therefore not yet an end-to-end trace identifier.
 
 **Deferred tracing convention:** generate one server request ID per request, propagate it consistently through success metadata, error bodies, response headers, and logs, and let clients surface it in support flows. Resolve the existing camelCase metadata contract before adopting the Word document's `request_id` spelling. Sentry/Grafana integration is not established by this repository.
 
-**Deferred rate-limit convention:** the original design calls for gateway enforcement, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and 429 responses with `Retry-After`. No limiter, gateway configuration, or tenant-plan limit settings implement this in the reviewed code. The Word document's self-hosted and SaaS plan quotas are historical proposals, not current enforced limits or committed product tiers. Choose quotas, enforcement scope, and storage when that work is approved.
-
 ## 10. Verification and maintenance
 
 The [auth integration test source](../src/test/java/com/osporo/engine/auth/AuthServiceIntegrationTest.java) declares `AuthControllerIntegrationTest` and exercises HTTP registration, duplicate email, validation, missing tenant header, login, refresh rotation, and logout invalidation with PostgreSQL Testcontainers. It asserts `meta.requestId` and snake-case token fields. [Auth service unit tests](../src/test/java/com/osporo/engine/auth/AuthServiceTest.java) cover service success and failure paths. [JWT service tests](../src/test/java/com/osporo/engine/auth/JwtServiceTest.java) cover configured access-token lifetime in seconds. These are existing test definitions, not a report of a test run for this document.
 
-Coverage does not yet establish a complete tenant-isolation boundary, authenticated header/token mismatch behavior, filter-level error contracts, platform permission isolation, pagination, tracing, idempotency, or rate limiting. Add relevant unit and integration coverage when implementing or changing those workflows.
+Coverage does not yet establish a complete tenant-isolation boundary, authenticated header/token mismatch behavior, filter-level error contracts, platform permission isolation, pagination, tracing, or idempotency. Add relevant unit and integration coverage when implementing or changing those workflows.
 
-For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Preserve existing contracts or document an explicit migration/versioning decision. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.
+For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Explain changes to existing contracts and keep them under `/v1` until the project owner directs otherwise. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.
