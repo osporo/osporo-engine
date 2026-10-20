@@ -80,8 +80,12 @@ The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the p
 | Orders | `ORDER_CREATE`, `ORDER_READ_OWN`, `ORDER_READ_ANY`, `ORDER_REFUND` |
 | Messages | `MESSAGE_CREATE`, `MESSAGE_READ_OWN` |
 | Moderation | `MODERATION_REVIEW`, `MODERATION_CONFIG`, `REPORT_CREATE` |
-| Users | `USER_READ_ANY`, `USER_SUSPEND`, `USER_INVITE` |
+| Users | `USER_READ_PUBLIC`, `USER_READ_ANY`, `USER_SUSPEND`, `USER_INVITE` |
 | Platform | `PLATFORM_ADMIN` |
+
+**User-profile permission:** `USER_READ_PUBLIC` is defined in the enum and V12 seeds it for `BUYER` and `SELLER`; login and refresh resolve it into access tokens from those bundles. Staff/owner defaults retain `USER_READ_ANY`, and the platform-admin bundle remains `PLATFORM_ADMIN` only. [The users API design](features/users.md#4-get-user-profile) limits `USER_READ_PUBLIC` to public buyer/seller profiles, reserving directory access and full profile fields for `USER_READ_ANY`; guest public seller access is a separate planned policy. These profile endpoints and their tenant/visibility enforcement are not implemented yet.
+
+V12 was edited in place with the project owner's authorization during development. The updated seeds apply when migrations run against a recreated database; an existing migrated database is not updated by editing the file. This change does not recreate or delete a database volume.
 
 **Current contract:** permission resolution and conversion to authorities exist, but current auth methods do not use `@PreAuthorize`. There is no role-management API. V12 seeds role bundles for the selected default tenant, not automatically for every future tenant. Its staff bundle includes `ORDER_READ_ANY`, `USER_READ_ANY`, and `MODERATION_REVIEW`, differing from the original document's permission table.
 

@@ -33,7 +33,7 @@ Keep roles distinct from permissions. Tenant-configurable roles may govern tenan
 ## Implementation Standards
 
 - Add or update unit and integration tests for behavioral changes.
-- Evolve the PostgreSQL schema through Flyway migrations; do not silently edit applied migrations.
+- Evolve the PostgreSQL schema through Flyway migrations; do not silently edit applied migrations. During current development, edit an existing migration when the project owner explicitly authorizes it for that change; the owner recreates the database volume to reapply migrations. This is not blanket permission to rewrite migrations or delete volumes.
 - Preserve clear API contracts and meaningful, stable error responses.
 - Keep business API routes on `/v1` until the project owner explicitly directs a version change. Explain compatibility impacts and update documentation and tests for contract changes within v1.
 - Leave rate limiting outside the current engine-building scope unless the project owner explicitly reopens it.
@@ -53,6 +53,7 @@ For each task:
 4. Add tests that demonstrate the changed behavior and security boundaries.
 5. Run the narrowest useful verification, then broader checks when practical.
 6. Report what changed, what was verified, and any remaining uncertainty.
+7. Whenever the task changes repository files, include a suggested commit message (subject) and commit description (body) for the code owner in the final response. Describe the task's changes, their purpose, and relevant verification or limitations, including documentation-only changes. Do not include unrelated pre-existing changes or create a commit unless requested.
 
 Challenge technically unsound assumptions and identify security risks. Do not automatically agree, but keep alternatives concrete and proportionate to the task.
 

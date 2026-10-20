@@ -17,6 +17,7 @@ BEGIN
             'BUYER',
             ARRAY[
                 'LISTING_READ',
+                'USER_READ_PUBLIC',
                 'ORDER_CREATE',
                 'ORDER_READ_OWN',
                 'MESSAGE_CREATE',
@@ -35,6 +36,7 @@ BEGIN
                 'LISTING_READ',
                 'LISTING_UPDATE_OWN',
                 'LISTING_DELETE_OWN',
+                'USER_READ_PUBLIC',
                 'ORDER_READ_OWN',
                 'MESSAGE_CREATE',
                 'MESSAGE_READ_OWN',

@@ -2,6 +2,8 @@
 
 Source: **Osporo API v1.docx**, User Domain. Converted and checked against the repository on 2026-10-19.
 
+Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
+
 **Status:** Planned API; no controller implements these routes.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
@@ -12,9 +14,8 @@ No user controller implements these routes. [UserService.getUser](../../src/main
 
 Open details from the source:
 
-- The user-list parameter table says `MARKETPLACE_ADMIN`, while the enum and examples use `MARKETPLACE_STAFF`. Preserve this discrepancy for resolution; do not introduce a new role from the table.
 - `BUSINESS_RULE_VIOLATION` on invitations is not in the current `ErrorCode` enum. Invitation acceptance, token delivery, and validation constraints are not specified here.
-- The profile visibility matrix uses role names; implementation must reconcile it with permission-based authorization without treating roles as permission substitutes.
+- `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. The profile visibility policy below still awaits a user controller and service enforcement; the enum and token claim alone do not implement it.
 - The suspension hierarchy and handling of multiple roles need precise rules before implementation. An error detail with `input` differs from the current shared `{field, message}` type.
 - Deleting or updating one's own account requires authentication and ownership even where the source says no specific permission. The source does not fully define deleted-account token handling.
 
@@ -146,7 +147,19 @@ Allows a user to fetch all users in a marketplace.
 | per_page | 20 | 1 – 100 | Results per page |
 | sort | CREATED_AT | CREATED_AT, DELETED_AT, UPDATED_AT, SUSPENDED_AT | Field to sort by |
 | order | desc | asc \| desc | Sort direction |
-| roles | [BUYER, SELLER, MARKETPLACE_ADMIN, MARKETPLACE_OWNER] | All roles excluding OSPORO_ADMIN | Roles to filter by, provided as a list |
+| roles | [BUYER, SELLER, MARKETPLACE_STAFF, MARKETPLACE_OWNER] | BUYER, SELLER, MARKETPLACE_STAFF, MARKETPLACE_OWNER | Roles to filter by, provided as a list; OSPORO_ADMIN is a platform role and is excluded from this tenant endpoint |
+
+The role catalogue is:
+
+| Role | Scope | Valid tenant-directory filter |
+| --- | --- | --- |
+| `BUYER` | Tenant participant | Yes |
+| `SELLER` | Tenant participant | Yes |
+| `MARKETPLACE_STAFF` | Tenant operator | Yes |
+| `MARKETPLACE_OWNER` | Tenant owner | Yes |
+| `OSPORO_ADMIN` | Platform administration | No |
+
+The `roles` filter selects records within the resolved tenant; it never grants access or changes tenant scope. `OSPORO_ADMIN` is a valid engine role, but platform administrators are outside this tenant directory's intended visibility. Requests filtering by it retain the `INVALID_PARAMETER` response described below.
 
 #### Permissions
 
@@ -320,7 +333,7 @@ Error: INVALID_TOKEN
 
 `GET /v1/users/{id}`
 
-This endpoint allows any users to access a user’s public profile. Guests can only view the profile of a seller. Participants can see each other’s profiles. Operators can see all profiles.
+Returns a public or full profile according to the caller's permissions and the target's tenant and profile category. Guests can view public seller profiles. `USER_READ_PUBLIC` allows authenticated callers to view public buyer and seller profiles without gaining directory access or private profile fields. `USER_READ_ANY` allows full profiles within the tenant.
 
 #### Parameters
 
@@ -328,15 +341,20 @@ No params
 
 #### Permissions
 
-Visibility matrix
+Visibility is evaluated server-side after resolving tenant scope. These rules describe the planned endpoint, not current enforcement.
 
-| Viewer | Can see |
-| --- | --- |
-| Guest (no token) | SELLER profiles only |
-| BUYER | BUYER + SELLER profiles |
-| SELLER | BUYER + SELLER profiles |
-| MARKETPLACE_STAFF | All tenant profiles |
-| MARKETPLACE_OWNER | All tenant profiles |
+| Caller access | Visible targets within the tenant | Representation |
+| --- | --- | --- |
+| Guest, or authenticated caller without either read permission | Public seller profiles only | Public profile |
+| Authenticated with `USER_READ_PUBLIC` | Buyer and seller profiles | Public profile |
+| Authenticated with `USER_READ_ANY` | All tenant profiles | Full profile |
+| `PLATFORM_ADMIN` alone | No additional tenant-profile access | No tenant-data override |
+
+`USER_READ_PUBLIC` is a narrower permission. Its intended scope does not authorize `GET /v1/users`, return email or administrative fields, expose staff/owner-only profiles, or grant cross-tenant access. V12 seeds it in the default `BUYER` and `SELLER` bundles; the default `MARKETPLACE_STAFF` and `MARKETPLACE_OWNER` bundles retain `USER_READ_ANY`. These are default bundles, not hardcoded checks on the caller's role name. Guests have no token or assigned permission; their seller access remains a planned explicit public-route policy.
+
+The target's `BUYER` or `SELLER` role classifies a participant profile; it does not authorize the caller. Visibility for targets holding both operator and participant roles remains an open design decision; do not infer public visibility solely from a secondary role before that policy is defined. Platform-administrator profiles are excluded from this tenant endpoint even if they also carry tenant roles.
+
+Apply the strongest applicable read permission: `USER_READ_ANY` takes precedence over `USER_READ_PUBLIC`. Missing, out-of-tenant, or visibility-restricted targets return 404 `PROFILE_NOT_FOUND` rather than revealing whether a hidden profile exists. The own-profile endpoint `GET /v1/users/me` remains authenticated self-access without either permission. A public security matcher alone does not enforce these rules, and tenant scope must also be resolved safely for guest requests.
 
 #### Request
 
@@ -344,7 +362,7 @@ No body
 
 #### Response
 
-Callers with USER_READ_ANY receive the full profile response. All other callers receive the public profile response.
+Callers with `USER_READ_ANY` receive the full profile response for visible tenant targets. Callers allowed by the guest policy or `USER_READ_PUBLIC` receive only the public profile response. All other targets return 404; there is no fallback that exposes a hidden profile.
 
 Public profile
 

@@ -152,6 +152,7 @@ No body
         "LISTING_UPDATE_OWN",
         "LISTING_DELETE_OWN",
         "LISTING_READ",
+        "USER_READ_PUBLIC",
         "ORDER_READ_OWN",
         "MESSAGE_CREATE",
         "MESSAGE_READ_OWN",
@@ -166,6 +167,7 @@ No body
       "role_name": "BUYER",
       "permissions": [
         "LISTING_READ",
+        "USER_READ_PUBLIC",
         "ORDER_CREATE",
         "ORDER_READ_OWN",
         "MESSAGE_CREATE",

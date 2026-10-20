@@ -2,6 +2,7 @@ package com.osporo.engine.auth;
 
 import java.util.UUID;
 import java.util.Base64;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 
 import tools.jackson.databind.ObjectMapper;
@@ -21,6 +22,11 @@ import com.osporo.engine.auth.dto.LoginRequest;
 import com.osporo.engine.auth.dto.RefreshRequest;
 import com.osporo.engine.auth.dto.RegisterRequest;
 import com.osporo.engine.tenant.TenantRepository;
+import com.osporo.engine.tenant.TenantRoleConfigRepository;
+import com.osporo.engine.shared.enums.Permission;
+import com.osporo.engine.shared.enums.RoleType;
+import com.osporo.engine.user.UserRepository;
+import static org.assertj.core.api.Assertions.assertThat;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -62,12 +68,81 @@ class AuthControllerIntegrationTest {
     @Autowired
     private TenantRepository tenantRepository;
 
+    @Autowired
+    private TenantRoleConfigRepository tenantRoleConfigRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private JwtService jwtService;
+
     private UUID tenantId;
 
     @BeforeEach
     void setUp() {
         // Use the seeded tenant from Flyway migrations
         tenantId = tenantRepository.findAll().get(0).getId();
+    }
+
+    @Test
+    void seededProfilePermissions_shouldKeepParticipantAndAdministrativeAccessSeparate() {
+        for (RoleType role : List.of(RoleType.BUYER, RoleType.SELLER)) {
+            var config = tenantRoleConfigRepository.findByTenantIdAndRoleName(tenantId, role).orElseThrow();
+            assertThat(config.getPermissions())
+                .contains(Permission.USER_READ_PUBLIC)
+                .doesNotContain(Permission.USER_READ_ANY, Permission.PLATFORM_ADMIN);
+        }
+        for (RoleType role : List.of(RoleType.MARKETPLACE_STAFF, RoleType.MARKETPLACE_OWNER)) {
+            var config = tenantRoleConfigRepository.findByTenantIdAndRoleName(tenantId, role).orElseThrow();
+            assertThat(config.getPermissions())
+                .contains(Permission.USER_READ_ANY)
+                .doesNotContain(Permission.USER_READ_PUBLIC, Permission.PLATFORM_ADMIN);
+        }
+        var admin = tenantRoleConfigRepository
+            .findByTenantIdAndRoleName(tenantId, RoleType.OSPORO_ADMIN).orElseThrow();
+        assertThat(admin.getPermissions()).containsExactly(Permission.PLATFORM_ADMIN);
+    }
+
+    @Test
+    void loginAndRefresh_shouldIssuePublicProfilePermission_forSeededParticipantRoles() throws Exception {
+        for (RoleType role : List.of(RoleType.BUYER, RoleType.SELLER)) {
+            String email = "profile-permission-" + role.name().toLowerCase(java.util.Locale.ROOT) + "@example.com";
+            mockMvc.perform(post("/v1/auth/register")
+                    .header("X-Tenant-ID", tenantId.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new RegisterRequest(email, "password123"))))
+                .andExpect(status().isCreated());
+
+            var user = userRepository.findByEmailAndTenantId(email, tenantId).orElseThrow();
+            user.setRoles(List.of(role));
+            userRepository.saveAndFlush(user);
+
+            String loginBody = mockMvc.perform(post("/v1/auth/login")
+                    .header("X-Tenant-ID", tenantId.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new LoginRequest(email, "password123"))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var login = objectMapper.readTree(loginBody).path("data");
+            assertPublicProfileClaims(login.path("access_token").asText(), user.getId());
+
+            String refreshBody = mockMvc.perform(post("/v1/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new RefreshRequest(login.path("refresh_token").asText()))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            assertPublicProfileClaims(
+                objectMapper.readTree(refreshBody).path("data").path("access_token").asText(), user.getId()
+            );
+        }
+    }
+
+    private void assertPublicProfileClaims(String accessToken, UUID userId) {
+        var claims = jwtService.validateAndExtract(accessToken);
+        assertThat(claims.getSubject()).isEqualTo(userId.toString());
+        assertThat(claims.get("tenant_id", String.class)).isEqualTo(tenantId.toString());
+        assertThat(claims.get("permissions", List.class))
+            .contains("USER_READ_PUBLIC")
+            .doesNotContain("USER_READ_ANY", "PLATFORM_ADMIN");
     }
 
     @Test

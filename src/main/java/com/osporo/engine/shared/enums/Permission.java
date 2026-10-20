@@ -30,6 +30,7 @@ public enum Permission {
     REPORT_CREATE,
 
     // User
+    USER_READ_PUBLIC,
     USER_READ_ANY,
     USER_SUSPEND,
     USER_INVITE,
