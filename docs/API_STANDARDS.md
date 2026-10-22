@@ -45,9 +45,9 @@ An unauthenticated tenant header selects a tenant; it does not establish identit
 
 User identities belong to one tenant. The database enforces email uniqueness on `(tenant_id, email)`; registration and login use tenant-scoped repository methods. Do not introduce a shared cross-tenant account implicitly.
 
-**Gaps:** the original document's JWT-only tenant rule does not describe unauthenticated auth flows. There is no gateway tenant-mismatch rejection or automatic tenant predicate applied to every repository query. For example, `UserService.getUser` uses an unscoped ID lookup; it is not currently exposed by a user controller. New workflows must not assume every service or repository is already isolated.
+**Gaps:** the original document's JWT-only tenant rule does not describe unauthenticated auth flows. There is no gateway tenant-mismatch rejection or automatic tenant predicate applied to every repository query. New workflows must not assume every service or repository is already isolated.
 
-**Agreed follow-up:** make `UserService.getUser` tenant-scoped and verify that a caller cannot retrieve another tenant's user. This remains pending; documenting the follow-up does not mean the service has been fixed.
+**User foundation (2026-10-22):** `UserService.getUser` now uses the current tenant context and `findByIdAndTenantId`. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; missing tenant context retains 400 `TENANT_CONTEXT_MISSING`. This is service-level loading, not a public endpoint or profile-visibility policy. User controllers remain unimplemented. The user entity now permits a null display name, matching the existing schema and registration behavior.
 
 Evidence: [JWT filter](../src/main/java/com/osporo/engine/shared/security/JwtAuthenticationFilter.java), [tenant context](../src/main/java/com/osporo/engine/shared/security/TenantContextHolder.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [user service](../src/main/java/com/osporo/engine/user/UserService.java), [users migration](../src/main/resources/db/migration/V2__create_users.sql).
 

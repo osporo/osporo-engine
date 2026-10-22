@@ -38,7 +38,7 @@ public class User {
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
-    @Column(name = "display_name", nullable = false)
+    @Column(name = "display_name")
     private String displayName;
 
     @Column(name = "avatar_url")

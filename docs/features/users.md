@@ -10,7 +10,7 @@ Read [API standards](../API_STANDARDS.md) for the current wire contract and shar
 
 ## Implementation notes and open decisions
 
-No user controller implements these routes. [UserService.getUser](../../src/main/java/com/osporo/engine/user/UserService.java) still uses an unscoped ID lookup; making it tenant-scoped is an agreed pending fix. The source's profile visibility, invitations, suspension hierarchy, audit responses, and deletion behavior are designs, not implemented guarantees.
+No user controller implements these routes. Phase 1 foundation (2026-10-22): [UserService.getUser](../../src/main/java/com/osporo/engine/user/UserService.java) loads by ID within the current tenant context. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; absent tenant context raises 400 `TENANT_CONTEXT_MISSING`. The user entity permits a null display name, matching the database and registration behavior. This loading method does not implement profile visibility or account-status filtering. The source's profile visibility, invitations, suspension hierarchy, audit responses, and deletion behavior remain designs, not implemented guarantees.
 
 Open details from the source:
 
