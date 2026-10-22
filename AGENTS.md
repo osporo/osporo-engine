@@ -43,6 +43,13 @@ Keep roles distinct from permissions. Tenant-configurable roles may govern tenan
 - Keep `docs/API_STANDARDS.md` aligned with API changes, including examples, implementation status, and known gaps. Do not silently change an existing contract to match a future convention; explain compatibility implications and update relevant tests.
 - Prefer reproducible local development and CI workflows.
 
+## Code Readability and Change Discipline
+
+- Write clean, readable code with sufficient whitespace between logical steps. Avoid compressed methods, multiple statements on one line, and crowded expressions. Split long argument lists and conditions across lines when it improves readability.
+- Preserve existing variable, method, and class names unless the task requires a change or there is a concrete readability or correctness benefit. Do not make incidental renames, unrelated refactors, or unrelated formatting changes.
+- Import classes and use their simple names at use sites. Use fully qualified class names only when necessary to resolve a naming conflict.
+- Keep changes focused and reviewable. Follow established project conventions while making the purpose of each changed block easy to understand.
+
 ## Task Workflow
 
 For each task:
@@ -54,6 +61,8 @@ For each task:
 5. Run the narrowest useful verification, then broader checks when practical.
 6. Report what changed, what was verified, and any remaining uncertainty.
 7. Whenever the task changes repository files, include a suggested commit message (subject) and commit description (body) for the code owner in the final response. Describe the task's changes, their purpose, and relevant verification or limitations, including documentation-only changes. Do not include unrelated pre-existing changes or create a commit unless requested.
+
+For user-domain implementation, agree on small, reviewable phases and implement one phase at a time. Report its changes and verification, then wait for explicit code-owner approval before starting the next phase. Approval of the overall plan does not authorize proceeding through every phase without review.
 
 Challenge technically unsound assumptions and identify security risks. Do not automatically agree, but keep alternatives concrete and proportionate to the task.
 
