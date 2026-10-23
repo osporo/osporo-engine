@@ -155,7 +155,7 @@ Run the full suite or build:
 
 On Windows, substitute `.\gradlew.bat` for `./gradlew`.
 
-The full suite requires a Docker daemon for Testcontainers. Authentication integration tests provision their own PostgreSQL container; the separate application context test needs datasource and JWT configuration supplied through the environment. The integration test currently lives in `AuthServiceIntegrationTest.java` and declares `AuthControllerIntegrationTest`.
+The full suite requires a Docker daemon for Testcontainers. Authentication integration tests provision their own PostgreSQL container; the separate application context test needs datasource and JWT configuration supplied through the environment. The HTTP integration test is `AuthControllerIntegrationTest.java`; its filename matches the declared test class for IDE discovery.
 
 GitHub Actions runs `./gradlew clean build --no-daemon` on pushes and pull requests targeting `main` or `develop`, supplies a PostgreSQL service, and uploads test results. Its JWT signing secret comes from the repository's `JWT_SECRET` Actions secret. The Docker image build skips tests; use Gradle or CI to run them.
 
