@@ -157,6 +157,7 @@ On Windows, substitute `.\gradlew.bat` for `./gradlew`.
 
 The full suite requires a Docker daemon for Testcontainers. Authentication integration tests provision their own PostgreSQL container; the separate application context test needs datasource and JWT configuration supplied through the environment. The HTTP integration test is `AuthControllerIntegrationTest.java`; its filename matches the declared test class for IDE discovery.
 
+GitHub Actions runs `./gradlew clean build --no-daemon --console=plain` on pushes and pull requests targeting `main` or `develop`, and can also be started manually through `workflow_dispatch`. It uses Java 25 and a healthy PostgreSQL 16 service for the application-context test; integration tests start their own PostgreSQL containers through Testcontainers. CI uses a public test-only JWT signing key and needs no repository secrets. XML results and HTML test reports are uploaded even when tests fail and retained for seven days. Superseded runs are cancelled and the job has a 20-minute timeout. The Docker image build skips tests; use Gradle or CI to run them.
 
 These commands describe the configured workflows, not a claim that the full suite currently passes.
 

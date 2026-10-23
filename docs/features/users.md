@@ -12,11 +12,13 @@ Read [API standards](../API_STANDARDS.md) for the current wire contract and shar
 
 Phase 1 foundation (2026-10-22): [UserService.getUser](../../src/main/java/com/osporo/engine/user/UserService.java) loads by ID within the current tenant context. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; absent tenant context raises 400 `TENANT_CONTEXT_MISSING`. The user entity permits a null display name, matching the database and registration behavior. This loading method does not implement profile visibility or account-status filtering.
 
-Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. Phase 3 (2026-10-23) adds `PATCH /v1/users/me` with sparse-field validation and transactional updates. Their implemented contracts are described in sections 3 and 7 below. Authentication-time account-status enforcement belongs to a later phase, and token versioning is deferred.
+Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. Phase 3 (2026-10-23) adds `PATCH /v1/users/me` with sparse-field validation and transactional updates. Their implemented contracts are described in sections 3 and 7 below. Phase 6 now enforces current account/tenant status on Bearer requests; token versioning remains deferred.
 
-Phase 4 (2026-10-23) adds `GET /v1/users/{id}`, `UserAuthorizationPolicy`, and separate public/full DTOs, implementing section 4 below. It validates the requested tenant and filters target account status. Global authentication-time account-status enforcement and token versioning remain deferred.
+Phase 4 (2026-10-23) adds `GET /v1/users/{id}`, `UserAuthorizationPolicy`, and separate public/full DTOs, implementing section 4 below. It validates the requested tenant and filters target account status. Phase 6 additionally checks the caller before applying target-profile visibility; token versioning remains deferred.
 
-Phase 5 adds `GET /v1/users`, requiring `USER_READ_ANY` and querying the authenticated principal's active tenant through a custom repository fragment. Section 2 below documents role/lifecycle filtering, approved sorting, and pagination. Authentication-time status checks remain a later phase.
+Phase 5 adds `GET /v1/users`, requiring `USER_READ_ANY` and querying the authenticated principal's active tenant through a custom repository fragment. Section 2 below documents role/lifecycle filtering, approved sorting, and pagination. Phase 6 adds authentication-time membership and status checks before directory authorization and validation.
+
+Phase 6 (2026-10-23) also aligns login/refresh checks and adds an internal tenant/user-scoped refresh-session revocation operation for future lifecycle endpoints. Suspended accounts and inactive tenants fail with 403; deleted/missing/mismatched Bearer identities fail with 401. Restoring active status can make an old unexpired access token usable again until token versioning is implemented.
 
 Open details from the source:
 
@@ -263,13 +265,13 @@ Error: INSUFFICIENT_PERMISSIONS
 
 Error: INVALID_PARAMETER
 
-Missing or rejected authentication returns 401 `INVALID_TOKEN`. Missing/inactive tenants return 404 `TENANT_NOT_FOUND` / 403 `TENANT_SUSPENDED`. Successful metadata uses `requestId`, `perPage`, and `totalPages`; `filter_roles` is omitted. Errors have no request ID. Summary fields are `id`, `display_name`, `email`, `roles`, `avatar_url`, and `created_at`; nullable profile fields remain present.
+Missing or rejected authentication returns 401 `INVALID_TOKEN`. Missing/mismatched authenticated identities return 401 `INVALID_TOKEN`; inactive tenants return 403 `TENANT_SUSPENDED`. Successful metadata uses `requestId`, `perPage`, and `totalPages`; `filter_roles` is omitted. Errors have no request ID. Summary fields are `id`, `display_name`, `email`, `roles`, `avatar_url`, and `created_at`; nullable profile fields remain present.
 
 ### 3) Get own profile
 
 `GET /v1/users/me`
 
-**Implemented in Phase 2.** Returns the authenticated account using the signed principal's user and tenant IDs. It accepts no user selection from headers, query parameters, or a body. Roles come from the current account; permissions come from the access token and describe the authorities enforced for that request. The response contains only the six fields shown below, with nullable display name and avatar fields retained. Account-status checks are deferred to Phase 6; this endpoint does not yet reject a suspended/deleted account solely because of its database status.
+**Implemented in Phase 2.** Returns the authenticated account using the signed principal's user and tenant IDs. It accepts no user selection from headers, query parameters, or a body. Roles come from the current account; permissions come from the access token and describe the authorities enforced for that request. The response contains only the six fields shown below, with nullable display name and avatar fields retained. Phase 6 checks current account membership, deletion/suspension, and tenant activity before authenticated requests reach the controller. Permissions remain the token snapshot; token versioning remains deferred.
 
 #### Parameters
 
@@ -329,7 +331,7 @@ No body
 
 Error: INVALID_TOKEN
 
-Missing, malformed, or expired access tokens return 401 `INVALID_TOKEN` with `WWW-Authenticate: Bearer`. A missing account or a token user/tenant pair that matches no account returns 404 `PROFILE_NOT_FOUND`. Errors use `{error: {code, message, details}}` without a request ID.
+Missing, malformed, or expired access tokens return 401 `INVALID_TOKEN` with `WWW-Authenticate: Bearer`. A missing/deleted account or a token user/tenant pair that matches no account returns 401 `INVALID_TOKEN`. Suspended callers return 403 `ACCOUNT_SUSPENDED`; inactive tenants return 403 `TENANT_SUSPENDED`. Errors use `{error: {code, message, details}}` without a request ID.
 
 ### 4) Get user profile
 
@@ -431,7 +433,7 @@ Full profile
 
 Error: PROFILE_NOT_FOUND
 
-Tenant errors are 400 `TENANT_CONTEXT_MISSING` for missing/malformed guest tenant context, 404 `TENANT_NOT_FOUND` for an unknown tenant, and 403 `TENANT_SUSPENDED` for an inactive tenant. Seller ratings remain null until the ratings domain exists. Public and full DTOs exclude password hashes, provider identifiers, and token internals.
+For guests, tenant errors are 400 `TENANT_CONTEXT_MISSING` for missing/malformed guest tenant context, 404 `TENANT_NOT_FOUND` for an unknown tenant, and 403 `TENANT_SUSPENDED` for an inactive tenant. Seller ratings remain null until the ratings domain exists. Public and full DTOs exclude password hashes, provider identifiers, and token internals.
 
 ### 5) Suspend user
 
@@ -697,18 +699,18 @@ Users can only update their own profile
 ```json
 {
   "error": {
-    "code": "PROFILE_NOT_FOUND",
-    "message": "Requested profile not found",
+    "code": "INVALID_TOKEN",
+    "message": "Token is invalid or has expired.",
     "details": []
   }
 }
 ```
 
-404 Not Found
+401 Unauthorized
 
-Error: PROFILE_NOT_FOUND
+Error: INVALID_TOKEN
 
-Missing or rejected authentication returns 401 `INVALID_TOKEN`. Missing or out-of-tenant accounts return 404 `PROFILE_NOT_FOUND`. Invalid fields, unsupported fields, malformed JSON, and missing bodies return 400 `VALIDATION_ERROR`. Error responses contain no request ID.
+Missing or rejected authentication returns 401 `INVALID_TOKEN`. Missing/deleted or mismatched caller accounts return 401 `INVALID_TOKEN`. Suspended callers and inactive tenants return 403 `ACCOUNT_SUSPENDED` and `TENANT_SUSPENDED`, respectively. Invalid fields, unsupported fields, malformed JSON, and missing bodies return 400 `VALIDATION_ERROR`. Error responses contain no request ID.
 
 ### 8) Delete user
 

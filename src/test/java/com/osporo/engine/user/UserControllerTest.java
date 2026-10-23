@@ -1,6 +1,7 @@
 package com.osporo.engine.user;
 
 import com.osporo.engine.auth.JwtService;
+import com.osporo.engine.auth.AccountStatusService;
 import com.osporo.engine.shared.config.OsporoSecurityConfig;
 import com.osporo.engine.shared.enums.RoleType;
 import com.osporo.engine.shared.security.JwtAuthenticationFilter;
@@ -73,6 +74,9 @@ class UserControllerTest {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private AccountStatusService accountStatusService;
 
     @Test
     void getOwnProfile_shouldUsePrincipalAndReturnOnlyProfileFields() throws Exception {

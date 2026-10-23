@@ -194,16 +194,16 @@ class UserServiceIntegrationTest {
 
         mockMvc.perform(get("/v1/users/me")
                         .header("Authorization", "Bearer " + tokenFor(userId, tenantId)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("PROFILE_NOT_FOUND"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
     }
 
     @Test
-    void getOwnProfile_shouldReturnProfileNotFoundWhenAccountIsMissing() throws Exception {
+    void getOwnProfile_shouldRejectTokenWhenAccountIsMissing() throws Exception {
         mockMvc.perform(get("/v1/users/me")
                         .header("Authorization", "Bearer " + tokenFor(UUID.randomUUID(), tenantId)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("PROFILE_NOT_FOUND"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
     }
 
     @Test
@@ -305,8 +305,8 @@ class UserServiceIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(userId, tenantId))
                         .contentType("application/json")
                         .content("{\"display_name\":\"Changed\"}"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("PROFILE_NOT_FOUND"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
 
         entityManager.clear();
 

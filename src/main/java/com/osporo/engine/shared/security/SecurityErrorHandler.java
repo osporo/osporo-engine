@@ -2,6 +2,7 @@ package com.osporo.engine.shared.security;
 
 import com.osporo.engine.shared.enums.ErrorCode;
 import com.osporo.engine.shared.response.ErrorEnvelope;
+import com.osporo.engine.shared.exception.OsporoException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
@@ -65,5 +66,14 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
         objectMapper.writeValue(response.getOutputStream(), ErrorEnvelope.of(code, message));
+    }
+
+    public void handleAuthenticationFailure(HttpServletResponse response, OsporoException exception)
+            throws IOException {
+        if (exception.getHttpStatus() == HttpStatus.UNAUTHORIZED) {
+            response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+        }
+
+        writeError(response, exception.getHttpStatus(), exception.getErrorCode(), exception.getMessage());
     }
 }

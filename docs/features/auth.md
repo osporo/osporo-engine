@@ -1,6 +1,6 @@
 # Authentication API
 
-**Status:** Implemented. Last reviewed against source and existing tests: 2026-10-20.
+**Status:** Implemented. Last reviewed against source and existing tests: 2026-10-23.
 
 This reference describes the current authentication API and supersedes the auth design in **Osporo API v1.docx**. Read [API standards](../API_STANDARDS.md) for shared conventions and the [domain index](README.md) for the other domains. All auth routes remain under `/v1`.
 
@@ -26,7 +26,7 @@ X-Tenant-ID: 550e8400-e29b-41d4-a716-446655440000
 
 The UUID must identify an actual tenant; example UUIDs do not provision one. A missing, blank, or malformed tenant header leaves tenant context unset, so registration and login return 400 `TENANT_CONTEXT_MISSING` for an otherwise valid request.
 
-If a valid Bearer token is supplied, its `tenant_id` claim supplies tenant context instead of the header. A conflicting header is ignored rather than explicitly rejected. If a Bearer token fails validation, the filter clears authentication and continues without falling back to the tenant header. On these public auth routes, that does not itself guarantee a 401: registration/login still need tenant context, while refresh/logout use the body token independently.
+If a valid Bearer token is supplied, its `tenant_id` claim supplies tenant context instead of the header. A conflicting header is ignored rather than explicitly rejected. Supplied Bearer tokens must identify an existing, nondeleted, nonsuspended user in an active tenant. Invalid/expired tokens or missing/deleted/mismatched identities return JSON 401 `INVALID_TOKEN`; suspended accounts return 403 `ACCOUNT_SUSPENDED`; inactive tenants return 403 `TENANT_SUSPENDED`. These checks stop public requests too, without falling back to the tenant header. Omit access-token headers when logging in or refreshing.
 
 Success bodies use `{data, meta}`. Metadata is `{"requestId": "<uuid>", "pagination": null}`. The UUID is generated when metadata is constructed; it is not propagated as a shared `X-Request-ID` response header or error field. A 204 response has no body.
 
@@ -100,7 +100,7 @@ Example validation response for a password shorter than eight characters:
 
 `POST /v1/auth/login`
 
-Exchanges tenant-scoped credentials for an access token and refresh token. The email is lowercased and stripped for lookup. An unknown email and a password mismatch produce the same authentication error. After checking credentials, the service rejects a suspended user.
+Exchanges tenant-scoped credentials for an access token and refresh token. The email is lowercased and stripped for lookup. An unknown email, a password mismatch, and a deleted account produce the same authentication error. After checking credentials, the service rejects suspended users and inactive tenants.
 
 ### Request
 
@@ -137,8 +137,9 @@ Use the tenant header described above. Validation is the same as registration: n
 | --- | --- | --- |
 | 400 | `VALIDATION_ERROR` | A request field fails DTO validation |
 | 400 | `TENANT_CONTEXT_MISSING` | Tenant context is unset |
-| 401 | `AUTHENTICATION_FAILED` | No user matches the email in this tenant, or the password does not match |
+| 401 | `AUTHENTICATION_FAILED` | No user matches the email in this tenant, the password does not match, or the account is deleted |
 | 403 | `ACCOUNT_SUSPENDED` | Credentials match a suspended user |
+| 403 | `TENANT_SUSPENDED` | Credentials match an account in an inactive tenant |
 
 ```json
 {
@@ -160,7 +161,7 @@ Use the tenant header described above. Validation is the same as registration: n
 }
 ```
 
-Login does not explicitly check tenant existence or status, so it does not establish registration's `TENANT_NOT_FOUND` or `TENANT_SUSPENDED` contract. It also does not explicitly check the user's soft-deletion timestamp.
+Login requires an active tenant after validating credentials. Deleted accounts return the same generic authentication error as invalid credentials; a missing tenant fails closed with 401 `INVALID_TOKEN`.
 
 ## 3) Refresh
 
@@ -178,7 +179,7 @@ Exchanges a valid refresh token for a new access token and refresh token. Neithe
 }
 ```
 
-The service rejects an unknown, invalidated, or expired token and a token whose associated user cannot be found within its stored tenant. It rejects suspended users, invalidates the old refresh token, and issues a new pair within the transaction. Access-token expiry is not a prerequisite for refreshing.
+The service rejects an unknown, invalidated, or expired token and a token whose associated user cannot be found within its stored tenant. It rejects deleted/suspended users and inactive tenants before invalidating the old refresh token and issuing a new pair within the transaction. Access-token expiry is not a prerequisite for refreshing.
 
 ### Response
 
@@ -203,8 +204,9 @@ The service rejects an unknown, invalidated, or expired token and a token whose 
 | Status | Code | Condition |
 | --- | --- | --- |
 | 400 | `VALIDATION_ERROR` | `refresh_token` is missing, null, empty, or whitespace-only |
-| 401 | `INVALID_TOKEN` | Token is unknown, invalidated, expired, or its user cannot be found in the stored tenant |
+| 401 | `INVALID_TOKEN` | Token is unknown, invalidated, expired, or its user is deleted or cannot be found in the stored tenant |
 | 403 | `ACCOUNT_SUSPENDED` | The associated user is suspended |
+| 403 | `TENANT_SUSPENDED` | The associated tenant is inactive |
 
 ```json
 {
@@ -216,7 +218,7 @@ The service rejects an unknown, invalidated, or expired token and a token whose 
 }
 ```
 
-The suspended-account error has the same shape as login. Refresh does not explicitly recheck tenant status or user soft deletion. Sequential reuse of an invalidated token is rejected; concurrent reuse protection and automatic revocation for suspicious activity are not established by the current implementation.
+The suspended-account error has the same shape as login. Refresh checks tenant status and user soft deletion before rotation. Sequential reuse of an invalidated token is rejected; concurrent reuse protection and automatic revocation for suspicious activity are not established by the current implementation.
 
 ## 4) Logout
 
@@ -242,19 +244,19 @@ Invalidates the supplied refresh token if a matching record exists. It requires 
 
 400 `VALIDATION_ERROR` if `refresh_token` is missing, null, empty, or whitespace-only. The tolerant handling of unknown tokens does not bypass request validation.
 
-Logout invalidates only the supplied refresh token. It does not revoke every refresh token for the user, revoke an existing access token, or create/end a server-side HTTP session. Existing access tokens remain usable until expiry under the current stateless validation flow.
+Logout invalidates only the supplied refresh token. It does not revoke every refresh token for the user, revoke an existing access token, or create/end a server-side HTTP session. Existing access tokens remain usable until expiry while their account and tenant remain active. The internal `AuthService.revokeRefreshTokens` operation can invalidate all sessions for a tenant/user; logout still invalidates only the submitted token.
 
 ## Token configuration and authorization
 
 `JWT_ACCESS_TOKEN_EXPIRY` and `JWT_REFRESH_TOKEN_EXPIRY` configure lifetimes in seconds through [application properties](../../src/main/resources/application.properties); neither has a default in those properties. The integration tests use 900 and 2,592,000 seconds respectively. `JWT_SECRET` supplies the Base64-encoded signing key.
 
-Access JWTs contain `sub` (user UUID), `tenant_id`, `roles`, `permissions`, `iat`, and `exp`. On login and refresh, permissions are resolved as the deduplicated union of the user's roles' bundles for the tenant. Roles with no configuration contribute no permissions. The authentication filter validates signed claims and maps permission strings to Spring authorities without reloading the user's status or role bundles on each request. Role or status changes therefore do not immediately change an existing token's authorities.
+Access JWTs contain `sub` (user UUID), `tenant_id`, `roles`, `permissions`, `iat`, and `exp`. On login and refresh, permissions are resolved as the deduplicated union of the user's roles' bundles for the tenant. Roles with no configuration contribute no permissions. The authentication filter validates signed claims and current database membership/account/tenant status on every Bearer request, then maps token permission strings to Spring authorities. Role bundles remain a token snapshot until login or refresh. Token versioning is deferred: restoring active status can make an old unexpired access token usable again, even after refresh sessions were revoked. In-flight requests are not serialized with later status changes.
 
 Refresh tokens are generated from 32 random bytes, encoded with URL-safe Base64 without padding, and persisted with their tenant, user, expiry, and invalidation state. Each successful refresh issues a new token with the configured refresh lifetime. This does not guarantee an indefinite session.
 
 ## Error handling limits and verification
 
-The endpoint error tables describe explicit validation and service outcomes. Unexpected exceptions handled by controller advice return 500 `INTERNAL_SERVER_ERROR`. Unreadable or missing JSON request bodies now return 400 `VALIDATION_ERROR` through the shared exception handler (Phase 3). Other MVC failures, such as query/path type conversion, still lack dedicated mappings; do not assume every invalid HTTP request produces 400 `VALIDATION_ERROR`. The security filter chain now returns JSON 401 `INVALID_TOKEN` for missing/rejected authentication on protected routes and JSON 403 `INSUFFICIENT_PERMISSIONS` for authenticated access denial, using the shared error envelope. These four public auth routes retain the rejected-Bearer behavior described above; see [API standards](../API_STANDARDS.md). Token versioning and per-request account-status checks remain deferred.
+The endpoint error tables describe explicit validation and service outcomes. Unexpected exceptions handled by controller advice return 500 `INTERNAL_SERVER_ERROR`. Unreadable or missing JSON request bodies now return 400 `VALIDATION_ERROR` through the shared exception handler (Phase 3). Other MVC failures, such as query/path type conversion, still lack dedicated mappings; do not assume every invalid HTTP request produces 400 `VALIDATION_ERROR`. The security filter chain now returns JSON 401 `INVALID_TOKEN` for missing/rejected authentication on protected routes and JSON 403 `INSUFFICIENT_PERMISSIONS` for authenticated access denial, using the shared error envelope. These four public auth routes reject supplied invalid Bearer tokens and inactive callers/tenants as described above; see [API standards](../API_STANDARDS.md). Per-request account-status checks are implemented in Phase 6; token versioning remains deferred.
 
 This reference was checked against [AuthController](../../src/main/java/com/osporo/engine/auth/AuthController.java), [AuthService](../../src/main/java/com/osporo/engine/auth/AuthService.java), [auth DTOs](../../src/main/java/com/osporo/engine/auth/dto/), [AuthMapper](../../src/main/java/com/osporo/engine/auth/AuthMapper.java), [JwtService](../../src/main/java/com/osporo/engine/auth/JwtService.java), [the JWT filter](../../src/main/java/com/osporo/engine/shared/security/JwtAuthenticationFilter.java), [response types](../../src/main/java/com/osporo/engine/shared/response/), and [exception handling](../../src/main/java/com/osporo/engine/shared/exception/GlobalExceptionHandler.java).
 

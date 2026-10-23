@@ -239,8 +239,9 @@ class UserProfileIntegrationTest {
             case "PLATFORM" -> List.of("PLATFORM_ADMIN");
             default -> List.of();
         };
+        User callerAccount = createUser(tenantId, "MARKETPLACE_OWNER", "ACTIVE");
         String token = jwtService.generateAccessToken(
-                UUID.randomUUID(), tenantId, List.of("MARKETPLACE_OWNER"), permissions);
+                callerAccount.getId(), tenantId, List.of("MARKETPLACE_OWNER"), permissions);
 
         return request.header("Authorization", "Bearer " + token).header("X-Tenant-ID", otherTenantId);
     }

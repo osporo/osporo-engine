@@ -17,7 +17,6 @@ import com.osporo.engine.auth.model.RefreshToken;
 import com.osporo.engine.shared.enums.Permission;
 import com.osporo.engine.shared.enums.RoleType;
 import com.osporo.engine.shared.enums.TenantStatus;
-import com.osporo.engine.shared.exception.AccountSuspendedException;
 import com.osporo.engine.shared.exception.AuthenticationFailedException;
 import com.osporo.engine.shared.exception.EmailAlreadyExistsException;
 import com.osporo.engine.shared.exception.InvalidTokenException;
@@ -45,6 +44,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final TenantContextHolder tenantContextHolder;
+    private final AccountStatusService accountStatusService;
 
     public AuthService(
         UserRepository userRepository,
@@ -53,7 +53,8 @@ public class AuthService {
         TenantRoleConfigRepository tenantRoleConfigRepository,
         PasswordEncoder passwordEncoder,
         JwtService jwtService,
-        TenantContextHolder tenantContextHolder
+        TenantContextHolder tenantContextHolder,
+        AccountStatusService accountStatusService
     ) {
         this.userRepository             = userRepository;
         this.refreshTokenRepository     = refreshTokenRepository;
@@ -62,6 +63,7 @@ public class AuthService {
         this.passwordEncoder            = passwordEncoder;
         this.jwtService                 = jwtService;
         this.tenantContextHolder        = tenantContextHolder;
+        this.accountStatusService       = accountStatusService;
     }
 
     // ── Register ────────────────────────────────────────────────────────────
@@ -118,10 +120,11 @@ public class AuthService {
             throw new AuthenticationFailedException();
         }
 
-        // Reject suspended accounts
-        if (user.isSuspended()) {
-            throw new AccountSuspendedException();
+        if (user.isDeleted()) {
+            throw new AuthenticationFailedException();
         }
+
+        accountStatusService.requireActiveAccount(user);
 
         return issueTokenPair(user, tenantId);
     }
@@ -149,9 +152,7 @@ public class AuthService {
             .findByIdAndTenantId(stored.getUserId(), stored.getTenantId())
             .orElseThrow(() -> new InvalidTokenException());
 
-        if (user.isSuspended()) {
-            throw new AccountSuspendedException();
-        }
+        accountStatusService.requireActiveAccount(user);
 
         // Invalidate the old refresh token — rotation
         stored.setInvalidated(true);
@@ -173,6 +174,11 @@ public class AuthService {
                 token.setInvalidated(true);
                 refreshTokenRepository.save(token);
             });
+    }
+
+    @Transactional
+    public void revokeRefreshTokens(UUID userId, UUID tenantId) {
+        refreshTokenRepository.invalidateByUserIdAndTenantId(userId, tenantId);
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────

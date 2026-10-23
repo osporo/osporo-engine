@@ -256,8 +256,8 @@ class UserDirectoryIntegrationTest {
     @Test
     void directory_shouldRejectUnknownAndInactiveTenants() throws Exception {
         mockMvc.perform(directoryRequest(UUID.randomUUID(), List.of("USER_READ_ANY")))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("TENANT_NOT_FOUND"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
 
         Tenant tenant = tenantRepository.findById(tenantId).orElseThrow();
         tenant.setStatus(TenantStatus.SUSPENDED);
@@ -307,8 +307,11 @@ class UserDirectoryIntegrationTest {
     }
 
     private MockHttpServletRequestBuilder directoryRequest(UUID tokenTenantId, List<String> permissions) {
+        UUID callerId = tenantUsers.stream()
+                .filter(user -> user.hasRole(RoleType.BUYER) && !user.isDeleted() && !user.isSuspended())
+                .findFirst().orElseThrow().getId();
         String token = jwtService.generateAccessToken(
-                UUID.randomUUID(), tokenTenantId, List.of("BUYER"), permissions);
+                callerId, tokenTenantId, List.of("BUYER"), permissions);
 
         return get("/v1/users").header("Authorization", "Bearer " + token)
                 .header("X-Tenant-ID", otherTenantId);

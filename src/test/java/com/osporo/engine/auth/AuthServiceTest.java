@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -62,10 +63,37 @@ public class AuthServiceTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private AccountStatusService accountStatusService;
+
     @InjectMocks
     private AuthService authService;
 
     private final UUID tenantId = UUID.randomUUID();
+
+    @Test
+    void login_shouldRejectDeletedAccountWithoutIssuingTokens() {
+        User user = new User();
+        user.setPasswordHash("hashed_password");
+        user.setDeletedAt(OffsetDateTime.now());
+        when(tenantContextHolder.getTenantId()).thenReturn(tenantId);
+        when(userRepository.findByEmailAndTenantId("deleted@example.com", tenantId)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("password123", user.getPasswordHash())).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("deleted@example.com", "password123")))
+                .isInstanceOf(AuthenticationFailedException.class);
+
+        verify(jwtService, never()).generateAccessToken(any(), any(), any(), any());
+    }
+
+    @Test
+    void revokeRefreshTokens_shouldInvalidateOnlyTheRequestedUserAndTenant() {
+        UUID userId = UUID.randomUUID();
+
+        authService.revokeRefreshTokens(userId, tenantId);
+
+        verify(refreshTokenRepository).invalidateByUserIdAndTenantId(userId, tenantId);
+    }
 
     @Test
     void register_shouldCreateUser_whenEmailIsUnique() {
@@ -255,6 +283,8 @@ public class AuthServiceTest {
         when(passwordEncoder.matches(password, user.getPasswordHash())).thenReturn(true);
 
         // Act + Assert
+        doThrow(new AccountSuspendedException()).when(accountStatusService).requireActiveAccount(user);
+
         assertThatThrownBy(() -> authService.login(request)).isInstanceOf(AccountSuspendedException.class);
         verify(jwtService, never()).generateAccessToken(any(), any(), any(), any());
     }
@@ -378,6 +408,8 @@ public class AuthServiceTest {
         when(userRepository.findByIdAndTenantId(refreshToken.getUserId(), refreshToken.getTenantId())).thenReturn(Optional.of(user));
         
         // Act + Assert
+        doThrow(new AccountSuspendedException()).when(accountStatusService).requireActiveAccount(user);
+
         assertThatThrownBy(() -> authService.refresh(request)).isInstanceOf(AccountSuspendedException.class);
         verify(refreshTokenRepository, never()).save(any());
     }
