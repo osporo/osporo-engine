@@ -10,6 +10,8 @@ import com.osporo.engine.auth.dto.LogoutRequest;
 import com.osporo.engine.shared.exception.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -83,6 +85,18 @@ class AuthControllerIntegrationTest {
     void setUp() {
         // Use the seeded tenant from Flyway migrations
         tenantId = tenantRepository.findAll().get(0).getId();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{", ""})
+    void register_shouldReturnValidationErrorForUnreadableOrMissingBody(String body) throws Exception {
+        mockMvc.perform(post("/v1/auth/register")
+                        .header("X-Tenant-ID", tenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.details").isEmpty());
     }
 
     @Test

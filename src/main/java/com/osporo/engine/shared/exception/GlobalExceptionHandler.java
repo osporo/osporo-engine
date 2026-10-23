@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -21,6 +22,23 @@ public class GlobalExceptionHandler {
 
     private static final Logger log =
             LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(RequestValidationException.class)
+    public ResponseEntity<ErrorEnvelope> handleRequestValidation(RequestValidationException ex) {
+        return ResponseEntity
+                .status(ex.getHttpStatus())
+                .body(ErrorEnvelope.of(ex.getErrorCode(), ex.getMessage(), ex.getDetails()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorEnvelope> handleUnreadableRequest(HttpMessageNotReadableException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorEnvelope.of(
+                        ErrorCode.VALIDATION_ERROR,
+                        "The request body must contain valid JSON matching the expected structure."
+                ));
+    }
 
     // Handles all OsporoException subclasses
     @ExceptionHandler(OsporoException.class)

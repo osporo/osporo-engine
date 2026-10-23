@@ -4,7 +4,7 @@ Source: **Osporo API v1.docx**, User Domain. Converted and checked against the r
 
 Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
 
-**Status:** Partially implemented. `GET /v1/users/me` is implemented; the other seven routes remain planned.
+**Status:** Partially implemented. `GET /v1/users/me` and `PATCH /v1/users/me` are implemented; the other six routes remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
@@ -12,7 +12,7 @@ Read [API standards](../API_STANDARDS.md) for the current wire contract and shar
 
 Phase 1 foundation (2026-10-22): [UserService.getUser](../../src/main/java/com/osporo/engine/user/UserService.java) loads by ID within the current tenant context. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; absent tenant context raises 400 `TENANT_CONTEXT_MISSING`. The user entity permits a null display name, matching the database and registration behavior. This loading method does not implement profile visibility or account-status filtering.
 
-Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. The implemented contract is described in section 3 below. Other sections remain planned designs. Account-status enforcement belongs to a later phase, and token versioning is deferred.
+Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. Phase 3 (2026-10-23) adds `PATCH /v1/users/me` with sparse-field validation and transactional updates. Their implemented contracts are described in sections 3 and 7 below. Other sections remain planned designs. Account-status enforcement belongs to a later phase, and token versioning is deferred.
 
 Open details from the source:
 
@@ -632,7 +632,16 @@ Error: USER_NOT_SUSPENDED
 
 `PATCH /v1/users/me`
 
-This endpoint allows a user to make updates to their own profile.
+**Implemented in Phase 3.** Updates the authenticated account within the signed principal's tenant and returns the same projection as `GET /v1/users/me`. No additional permission is required. Headers, query parameters, and request fields cannot select a different account.
+
+Only `display_name` and `avatar_url` are accepted. Validation rejects the entire request before changing the account if any field is invalid or unsupported.
+
+| Field | When supplied | When omitted |
+| --- | --- | --- |
+| `display_name` | String, nonblank after trimming, at most 100 characters after trimming; null is invalid | Preserve existing name |
+| `avatar_url` | Null clears it; otherwise a string containing an absolute HTTPS URL with a host, at most 2,048 characters | Preserve existing avatar |
+
+The engine stores avatar URLs without fetching them. An empty `{}` is accepted and preserves profile fields. Every successful update refreshes `updated_at`. Credentials, email, roles, tenant, status, and all other unsupported fields are rejected with 400 `VALIDATION_ERROR`.
 
 #### Parameters
 
@@ -647,7 +656,7 @@ Users can only update their own profile
 ```json
 {
   "display_name": "Mr John",
-  "avatar_url": "https://..."
+  "avatar_url": "https://example.com/avatar.png"
 }
 ```
 
@@ -659,7 +668,7 @@ Users can only update their own profile
     "id": "uuid",
     "display_name": "Mr John",
     "email": "john@company.com",
-    "avatar_url": "https://...",
+    "avatar_url": "https://example.com/avatar.png",
     "roles": [
       "MARKETPLACE_STAFF"
     ],
@@ -670,7 +679,8 @@ Users can only update their own profile
     ]
   },
   "meta": {
-    "request_id": "uuid"
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
@@ -686,7 +696,6 @@ Users can only update their own profile
   "error": {
     "code": "PROFILE_NOT_FOUND",
     "message": "Requested profile not found",
-    "request_id": "uuid",
     "details": []
   }
 }
@@ -695,6 +704,8 @@ Users can only update their own profile
 404 Not Found
 
 Error: PROFILE_NOT_FOUND
+
+Missing or rejected authentication returns 401 `INVALID_TOKEN`. Missing or out-of-tenant accounts return 404 `PROFILE_NOT_FOUND`. Invalid fields, unsupported fields, malformed JSON, and missing bodies return 400 `VALIDATION_ERROR`. Error responses contain no request ID.
 
 ### 8) Delete user
 

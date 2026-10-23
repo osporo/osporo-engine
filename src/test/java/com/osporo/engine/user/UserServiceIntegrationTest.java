@@ -40,6 +40,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -242,6 +243,97 @@ class UserServiceIntegrationTest {
 
     private String tokenFor(UUID userId, UUID userTenantId) {
         return jwtService.generateAccessToken(userId, userTenantId, List.of("BUYER"), List.of());
+    }
+
+    @Test
+    void updateOwnProfile_shouldPersistOnlyRequestedFieldsAndRefreshTimestamp() throws Exception {
+        UUID userId = createUser(tenantId);
+        User user = userRepository.findById(userId).orElseThrow();
+        user.setAvatarUrl("https://example.com/original.png");
+        user.setUpdatedAt(OffsetDateTime.now().minusDays(1));
+        userRepository.saveAndFlush(user);
+        OffsetDateTime previousUpdate = user.getUpdatedAt();
+
+        mockMvc.perform(patch("/v1/users/me")
+                        .header("Authorization", "Bearer " + tokenFor(userId, tenantId))
+                        .header("X-Tenant-ID", otherTenantId)
+                        .contentType("application/json")
+                        .content("{\"display_name\":\"  Updated Name  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.display_name").value("Updated Name"))
+                .andExpect(jsonPath("$.data.avatar_url").value("https://example.com/original.png"));
+
+        entityManager.flush();
+        entityManager.clear();
+        User updated = userRepository.findByIdAndTenantId(userId, tenantId).orElseThrow();
+
+        assertThat(updated.getDisplayName()).isEqualTo("Updated Name");
+        assertThat(updated.getAvatarUrl()).isEqualTo("https://example.com/original.png");
+        assertThat(updated.getUpdatedAt()).isAfter(previousUpdate);
+        assertThat(updated.getEmail()).isEqualTo("profile@example.com");
+        assertThat(updated.getRoles()).containsExactly(RoleType.BUYER);
+    }
+
+    @Test
+    void updateOwnProfile_shouldPersistExplicitAvatarClear() throws Exception {
+        UUID userId = createUser(tenantId);
+        User user = userRepository.findById(userId).orElseThrow();
+        user.setDisplayName("Original Name");
+        user.setAvatarUrl("https://example.com/original.png");
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(patch("/v1/users/me")
+                        .header("Authorization", "Bearer " + tokenFor(userId, tenantId))
+                        .contentType("application/json")
+                        .content("{\"avatar_url\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.avatar_url").value(nullValue()));
+
+        entityManager.flush();
+        entityManager.clear();
+        User updated = userRepository.findByIdAndTenantId(userId, tenantId).orElseThrow();
+
+        assertThat(updated.getAvatarUrl()).isNull();
+        assertThat(updated.getDisplayName()).isEqualTo("Original Name");
+    }
+
+    @Test
+    void updateOwnProfile_shouldNotModifyOutOfTenantUser() throws Exception {
+        UUID userId = createUser(otherTenantId);
+
+        mockMvc.perform(patch("/v1/users/me")
+                        .header("Authorization", "Bearer " + tokenFor(userId, tenantId))
+                        .contentType("application/json")
+                        .content("{\"display_name\":\"Changed\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("PROFILE_NOT_FOUND"));
+
+        entityManager.clear();
+
+        assertThat(userRepository.findByIdAndTenantId(userId, otherTenantId).orElseThrow().getDisplayName())
+                .isNull();
+    }
+
+    @Test
+    void updateOwnProfile_shouldLeaveAccountUnchangedWhenAnyFieldIsInvalid() throws Exception {
+        UUID userId = createUser(tenantId);
+        entityManager.clear();
+        OffsetDateTime previousUpdate = userRepository.findById(userId).orElseThrow().getUpdatedAt();
+
+        mockMvc.perform(patch("/v1/users/me")
+                        .header("Authorization", "Bearer " + tokenFor(userId, tenantId))
+                        .contentType("application/json")
+                        .content("{\"display_name\":\"Changed\",\"roles\":[\"MARKETPLACE_OWNER\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+        entityManager.flush();
+        entityManager.clear();
+        User unchanged = userRepository.findByIdAndTenantId(userId, tenantId).orElseThrow();
+
+        assertThat(unchanged.getDisplayName()).isNull();
+        assertThat(unchanged.getRoles()).containsExactly(RoleType.BUYER);
+        assertThat(unchanged.getUpdatedAt().toInstant()).isEqualTo(previousUpdate.toInstant());
     }
 
     private void assertProfileNotFound(UUID userId) {

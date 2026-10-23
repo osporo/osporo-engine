@@ -14,7 +14,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 
 ## 1. API surface and versioning
 
-**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements own-profile reads; `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
+**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements own-profile reads and updates; `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
 
 | Method | Path | Request body | Success | Tenant source |
 | --- | --- | --- | --- | --- |
@@ -23,6 +23,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | POST | `/v1/auth/refresh` | `refresh_token` | 200; new token pair | Stored refresh token |
 | POST | `/v1/auth/logout` | `refresh_token` | 204; no body | Refresh token lookup |
 | GET | `/v1/users/me` | None | 200; own profile and token permissions | Authenticated principal |
+| PATCH | `/v1/users/me` | Optional `display_name`, `avatar_url` | 200; updated own profile and token permissions | Authenticated principal |
 | GET | `/ping` | None | 200; `pong` | None |
 
 The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. A matcher is not an endpoint implementation: there are no corresponding domain controllers for listings, categories, orders, payments, messaging, or moderation in the reviewed source. Likewise, migrations and permission constants do not establish endpoint availability.
@@ -59,6 +60,8 @@ Evidence: [JWT filter](../src/main/java/com/osporo/engine/shared/security/JwtAut
 Access tokens are signed JWTs containing `sub` (user UUID), `tenant_id`, `roles`, `permissions`, `iat`, and `exp`. The filter validates the signature and expiry and maps permission strings to Spring authorities. It does not reload the user, tenant status, or permissions from the database on every authenticated request.
 
 `GET /v1/users/me` requires authentication without an additional permission. Its DTO contains only `id`, `display_name`, `email`, `avatar_url`, current database `roles`, and the authenticated token's `permissions`. Nullable profile fields remain present. Missing accounts or mismatched token tenant/user pairs return 404 `PROFILE_NOT_FOUND`. Account-status enforcement is deferred to a later phase; token versioning remains deferred.
+
+`PATCH /v1/users/me` uses the same identity, tenant boundary, permissions, and response projection. It accepts only `display_name` and `avatar_url`. Omitted fields remain unchanged; a supplied display name must be a string, nonblank after trimming, and at most 100 characters after trimming. `avatar_url: null` clears the avatar; otherwise it must be a string containing an absolute HTTPS URL with a host, at most 2,048 characters. URLs are stored without being fetched. Unsupported fields, invalid field types/values, and unreadable bodies return 400 `VALIDATION_ERROR`. Validation completes before any mutation. Successful updates set `updated_at`, including an empty `{}` update, which leaves profile fields unchanged.
 
 Token lifetimes are configured through `JWT_ACCESS_TOKEN_EXPIRY` and `JWT_REFRESH_TOKEN_EXPIRY`, both in **seconds**. There are no application-property defaults. Tests configure 900 seconds and 2,592,000 seconds (15 minutes and 30 days); those values are examples, not guaranteed deployment settings. `expires_in` reports the configured access-token lifetime in seconds.
 
@@ -177,7 +180,9 @@ For new endpoints, keep 409 for resource-state conflicts and 422 for other busin
 
 **Security errors:** the security filter chain uses `SecurityErrorHandler` to return the same error envelope. Missing or rejected authentication on protected routes returns 401 `INVALID_TOKEN` with `WWW-Authenticate: Bearer`; authenticated access-denied failures return 403 `INSUFFICIENT_PERMISSIONS`. Errors contain no request ID. The explicit `/v1/users/me` authentication matcher precedes the public `/v1/users/{id}` matcher. Public auth routes retain their existing behavior when a rejected Bearer token is supplied.
 
-**Gaps:** malformed JSON, type conversion, and routing failures lack dedicated advice mappings and must not be assumed to yield the intended 400/404 contract; the broad exception handler can classify otherwise unhandled MVC exceptions as 500.
+**Request-body errors (Phase 3):** unreadable or missing JSON bodies now return 400 `VALIDATION_ERROR` through `HttpMessageNotReadableException` handling. This shared correction also applies to auth request bodies, which previously fell through to the generic 500 handler. Sparse profile updates validate supplied values and unsupported fields explicitly, returning snake-case field names in `{field, message}` details. Existing Jakarta validation remains in use for auth DTOs.
+
+**Gaps:** query/path type conversion and routing failures lack dedicated advice mappings and must not be assumed to yield the intended 400/404 contract; the broad exception handler can classify otherwise unhandled MVC exceptions as 500.
 
 Evidence: [global exception handler](../src/main/java/com/osporo/engine/shared/exception/GlobalExceptionHandler.java), [error envelope](../src/main/java/com/osporo/engine/shared/response/ErrorEnvelope.java), [error codes](../src/main/java/com/osporo/engine/shared/enums/ErrorCode.java), [exception types](../src/main/java/com/osporo/engine/shared/exception/).
 
