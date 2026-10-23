@@ -4,7 +4,7 @@ Source: **Osporo API v1.docx**, User Domain. Converted and checked against the r
 
 Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
 
-**Status:** Partially implemented. `GET /v1/users/me` and `PATCH /v1/users/me` are implemented; the other six routes remain planned.
+**Status:** Partially implemented. `GET /v1/users/me`, `PATCH /v1/users/me`, and `GET /v1/users/{id}` are implemented; the other five routes remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
@@ -12,12 +12,14 @@ Read [API standards](../API_STANDARDS.md) for the current wire contract and shar
 
 Phase 1 foundation (2026-10-22): [UserService.getUser](../../src/main/java/com/osporo/engine/user/UserService.java) loads by ID within the current tenant context. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; absent tenant context raises 400 `TENANT_CONTEXT_MISSING`. The user entity permits a null display name, matching the database and registration behavior. This loading method does not implement profile visibility or account-status filtering.
 
-Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. Phase 3 (2026-10-23) adds `PATCH /v1/users/me` with sparse-field validation and transactional updates. Their implemented contracts are described in sections 3 and 7 below. Other sections remain planned designs. Account-status enforcement belongs to a later phase, and token versioning is deferred.
+Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. Phase 3 (2026-10-23) adds `PATCH /v1/users/me` with sparse-field validation and transactional updates. Their implemented contracts are described in sections 3 and 7 below. Authentication-time account-status enforcement belongs to a later phase, and token versioning is deferred.
+
+Phase 4 (2026-10-23) adds `GET /v1/users/{id}`, `UserAuthorizationPolicy`, and separate public/full DTOs, implementing section 4 below. It validates the requested tenant and filters target account status. Global authentication-time account-status enforcement and token versioning remain deferred.
 
 Open details from the source:
 
 - `BUSINESS_RULE_VIOLATION` on invitations is not in the current `ErrorCode` enum. Invitation acceptance, token delivery, and validation constraints are not specified here.
-- `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. The profile visibility policy below still awaits a user controller and service enforcement; the enum and token claim alone do not implement it.
+- `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. Phase 4 enforces its public-profile scope; it does not grant directory or private-field access.
 - The suspension hierarchy and handling of multiple roles need precise rules before implementation. An error detail with `input` differs from the current shared `{field, message}` type.
 - Deleting or updating one's own account requires authentication and ownership even where the source says no specific permission. The source does not fully define deleted-account token handling.
 
@@ -337,26 +339,28 @@ Missing, malformed, or expired access tokens return 401 `INVALID_TOKEN` with `WW
 
 `GET /v1/users/{id}`
 
-Returns a public or full profile according to the caller's permissions and the target's tenant and profile category. Guests can view public seller profiles. `USER_READ_PUBLIC` allows authenticated callers to view public buyer and seller profiles without gaining directory access or private profile fields. `USER_READ_ANY` allows full profiles within the tenant.
+**Implemented in Phase 4.** Returns a public or full profile according to the caller's permissions and the target's tenant and profile category. Guests can view public seller profiles. `USER_READ_PUBLIC` allows authenticated callers to view public buyer and seller profiles without gaining directory access or private profile fields. `USER_READ_ANY` allows full profiles within the tenant, including suspended accounts. Deleted and platform-administrator targets are always hidden.
 
 #### Parameters
 
-No params
+| Parameter | Location | Requirement |
+| --- | --- | --- |
+| `id` | Path | Required user UUID within the resolved tenant |
 
 #### Permissions
 
-Visibility is evaluated server-side after resolving tenant scope. These rules describe the planned endpoint, not current enforcement.
+Visibility is enforced in the service after resolving and validating tenant scope. Guests supply `X-Tenant-ID`; authenticated requests use the signed principal's tenant. The tenant must exist and be active. The `id` path parameter must be a UUID; malformed values return 400 `INVALID_PARAMETER`.
 
 | Caller access | Visible targets within the tenant | Representation |
 | --- | --- | --- |
 | Guest, or authenticated caller without either read permission | Public seller profiles only | Public profile |
 | Authenticated with `USER_READ_PUBLIC` | Buyer and seller profiles | Public profile |
-| Authenticated with `USER_READ_ANY` | All tenant profiles | Full profile |
+| Authenticated with `USER_READ_ANY` | Nondeleted tenant profiles, including suspended accounts; platform administrators excluded | Full profile |
 | `PLATFORM_ADMIN` alone | No additional tenant-profile access | No tenant-data override |
 
-`USER_READ_PUBLIC` is a narrower permission. Its intended scope does not authorize `GET /v1/users`, return email or administrative fields, expose staff/owner-only profiles, or grant cross-tenant access. V12 seeds it in the default `BUYER` and `SELLER` bundles; the default `MARKETPLACE_STAFF` and `MARKETPLACE_OWNER` bundles retain `USER_READ_ANY`. These are default bundles, not hardcoded checks on the caller's role name. Guests have no token or assigned permission; their seller access remains a planned explicit public-route policy.
+`USER_READ_PUBLIC` is a narrower permission. Its intended scope does not authorize `GET /v1/users`, return email or administrative fields, expose staff/owner-only profiles, or grant cross-tenant access. V12 seeds it in the default `BUYER` and `SELLER` bundles; the default `MARKETPLACE_STAFF` and `MARKETPLACE_OWNER` bundles retain `USER_READ_ANY`. These are default bundles, not hardcoded checks on the caller's role name. Guests have no token or assigned permission; their seller access is enforced as an explicit public-route policy.
 
-The target's `BUYER` or `SELLER` role classifies a participant profile; it does not authorize the caller. Visibility for targets holding both operator and participant roles remains an open design decision; do not infer public visibility solely from a secondary role before that policy is defined. Platform-administrator profiles are excluded from this tenant endpoint even if they also carry tenant roles.
+The target's `BUYER` or `SELLER` role classifies a participant profile; it does not authorize the caller. Mixed operator/participant accounts may expose the corresponding public participant projection: mixed seller accounts are public to guests, and mixed buyer accounts require `USER_READ_PUBLIC`. This never exposes operator roles or private fields. Platform-administrator profiles are excluded even if they also carry tenant roles. Without `USER_READ_ANY`, suspended targets are hidden regardless of participant roles.
 
 Apply the strongest applicable read permission: `USER_READ_ANY` takes precedence over `USER_READ_PUBLIC`. Missing, out-of-tenant, or visibility-restricted targets return 404 `PROFILE_NOT_FOUND` rather than revealing whether a hidden profile exists. The own-profile endpoint `GET /v1/users/me` remains authenticated self-access without either permission. A public security matcher alone does not enforce these rules, and tenant scope must also be resolved safely for guest requests.
 
@@ -376,11 +380,12 @@ Public profile
     "id": "uuid",
     "display_name": "John Doe",
     "avatar_url": "https://...",
-    "seller_rating": 4.8,
+    "seller_rating": null,
     "member_since": "2026-03-12T00:00:00+02:00"
   },
   "meta": {
-    "request_id": "uuid"
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
@@ -399,12 +404,13 @@ Full profile
       "BUYER"
     ],
     "status": "ACTIVE",
-    "seller_rating": 4.8,
+    "seller_rating": null,
     "created_at": "2026-03-12T00:00:00+02:00",
     "suspended_at": null
   },
   "meta": {
-    "request_id": "uuid"
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
@@ -420,7 +426,6 @@ Full profile
   "error": {
     "code": "PROFILE_NOT_FOUND",
     "message": "The requested profile was not found",
-    "request_id": "uuid",
     "details": []
   }
 }
@@ -429,6 +434,8 @@ Full profile
 404 Not Found
 
 Error: PROFILE_NOT_FOUND
+
+Tenant errors are 400 `TENANT_CONTEXT_MISSING` for missing/malformed guest tenant context, 404 `TENANT_NOT_FOUND` for an unknown tenant, and 403 `TENANT_SUSPENDED` for an inactive tenant. Seller ratings remain null until the ratings domain exists. Public and full DTOs exclude password hashes, provider identifiers, and token internals.
 
 ### 5) Suspend user
 

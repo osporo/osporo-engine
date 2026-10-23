@@ -50,6 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         JwtService.class,
         SecurityErrorHandler.class,
         TenantContextHolder.class,
+        UserAuthorizationPolicy.class,
         UserMapper.class
 })
 class UserControllerTest {

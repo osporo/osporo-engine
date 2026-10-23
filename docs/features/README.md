@@ -1,13 +1,13 @@
 # Domain API documentation
 
-This directory contains ten domain API references, initially converted from **Osporo API v1.docx**, covering 71 endpoints. Authentication documents the current implementation and supersedes its original design; users now includes the implemented own-profile GET and PATCH alongside planned routes. The other domains document planned endpoint contracts and source gaps, with subsequent design revisions identified in each file. Authentication was reviewed on 2026-10-20; planned-domain implementation status was checked on 2026-10-19. The users role catalogue and permission-based profile visibility design were updated on 2026-10-20; own-profile GET was added on 2026-10-22.
+This directory contains ten domain API references, initially converted from **Osporo API v1.docx**, covering 71 endpoints. Authentication documents the current implementation and supersedes its original design; users now includes own-profile GET/PATCH and public/full profile reads alongside planned routes. The other domains document planned endpoint contracts and source gaps, with subsequent design revisions identified in each file. Authentication was reviewed on 2026-10-20; planned-domain implementation status was checked on 2026-10-19. The users role catalogue and permission-based profile visibility design were updated on 2026-10-20; own-profile GET was added on 2026-10-22.
 
 ## Domains
 
 | Domain | Endpoints | Implementation status |
 | --- | --- | --- |
 | [Authentication](auth.md) | 4 | Current implementation |
-| [Users](users.md) | 8 | Own-profile GET/PATCH implemented; 6 routes planned |
+| [Users](users.md) | 8 | 3 profile routes implemented; 5 routes planned |
 | [Categories](categories.md) | 6 | Planned |
 | [Listings](listings.md) | 15 | Planned |
 | [Orders](orders.md) | 10 | Planned |
@@ -19,7 +19,7 @@ This directory contains ten domain API references, initially converted from **Os
 
 ## How to use these references
 
-The original document describes a full API design; it does not establish which features exist. The four auth routes and two own-profile routes (GET/PATCH) are implemented. The remaining 65 routes are planned designs. Security matchers, database migrations, enums, or basic services alone do not expose those APIs. The diagnostic `/ping` route is outside this source's domain inventory.
+The original document describes a full API design; it does not establish which features exist. The four auth routes and three user-profile routes are implemented. The remaining 64 routes are planned designs. Security matchers, database migrations, enums, or basic services alone do not expose those APIs. The diagnostic `/ping` route is outside this source's domain inventory.
 
 Read [authentication](auth.md) directly for its implemented contract. For planned domains, read each domain's implementation notes before its source API design. [API standards](../API_STANDARDS.md) describes the current shared contract and overrides conflicting historical conventions; source code and tests establish implemented behavior. [Project vision](../PROJECT_VISION.md) and applicable [ADRs](../adrs/) provide direction. Do not silently resolve an open product or architecture decision by implementing an example literally.
 

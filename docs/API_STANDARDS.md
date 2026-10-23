@@ -14,7 +14,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 
 ## 1. API surface and versioning
 
-**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements own-profile reads and updates; `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
+**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements own-profile reads/updates and public/full profile reads; `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
 
 | Method | Path | Request body | Success | Tenant source |
 | --- | --- | --- | --- | --- |
@@ -24,6 +24,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | POST | `/v1/auth/logout` | `refresh_token` | 204; no body | Refresh token lookup |
 | GET | `/v1/users/me` | None | 200; own profile and token permissions | Authenticated principal |
 | PATCH | `/v1/users/me` | Optional `display_name`, `avatar_url` | 200; updated own profile and token permissions | Authenticated principal |
+| GET | `/v1/users/{id}` | None | 200; public or full profile according to permission | Principal tenant, or guest `X-Tenant-ID` |
 | GET | `/ping` | None | 200; `pong` | None |
 
 The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. A matcher is not an endpoint implementation: there are no corresponding domain controllers for listings, categories, orders, payments, messaging, or moderation in the reviewed source. Likewise, migrations and permission constants do not establish endpoint availability.
@@ -49,7 +50,7 @@ User identities belong to one tenant. The database enforces email uniqueness on 
 
 **Gaps:** the original document's JWT-only tenant rule does not describe unauthenticated auth flows. There is no gateway tenant-mismatch rejection or automatic tenant predicate applied to every repository query. New workflows must not assume every service or repository is already isolated.
 
-**User foundation (2026-10-22):** `UserService.getUser` uses the current tenant context and `findByIdAndTenantId`. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; missing tenant context retains 400 `TENANT_CONTEXT_MISSING`. `GET /v1/users/me` loads the account using the authenticated principal's user and tenant IDs; caller-supplied headers or query IDs cannot select another account. This does not implement public-profile visibility. The user entity permits a null display name, matching the existing schema and registration behavior.
+**User foundation (2026-10-22):** `UserService.getUser` uses the current tenant context and `findByIdAndTenantId`. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; missing tenant context retains 400 `TENANT_CONTEXT_MISSING`. `GET /v1/users/me` loads the account using the authenticated principal's user and tenant IDs; caller-supplied headers or query IDs cannot select another account. Own-profile loading is separate from the public-profile policy described below. The user entity permits a null display name, matching the existing schema and registration behavior.
 
 Evidence: [JWT filter](../src/main/java/com/osporo/engine/shared/security/JwtAuthenticationFilter.java), [tenant context](../src/main/java/com/osporo/engine/shared/security/TenantContextHolder.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [user service](../src/main/java/com/osporo/engine/user/UserService.java), [users migration](../src/main/resources/db/migration/V2__create_users.sql).
 
@@ -89,7 +90,9 @@ The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the p
 | Users | `USER_READ_PUBLIC`, `USER_READ_ANY`, `USER_SUSPEND`, `USER_INVITE` |
 | Platform | `PLATFORM_ADMIN` |
 
-**User-profile permission:** `USER_READ_PUBLIC` is defined in the enum and V12 seeds it for `BUYER` and `SELLER`; login and refresh resolve it into access tokens from those bundles. Staff/owner defaults retain `USER_READ_ANY`, and the platform-admin bundle remains `PLATFORM_ADMIN` only. [The users API design](features/users.md#4-get-user-profile) limits `USER_READ_PUBLIC` to public buyer/seller profiles, reserving directory access and full profile fields for `USER_READ_ANY`; guest public seller access is a separate planned policy. These profile endpoints and their tenant/visibility enforcement are not implemented yet.
+**User-profile permission:** `USER_READ_PUBLIC` is defined in the enum and V12 seeds it for `BUYER` and `SELLER`; login and refresh resolve it into access tokens from those bundles. Staff/owner defaults retain `USER_READ_ANY`, and the platform-admin bundle remains `PLATFORM_ADMIN` only. `GET /v1/users/{id}` now enforces [the profile visibility policy](features/users.md#4-get-user-profile): guests and callers without read permissions see public seller profiles; `USER_READ_PUBLIC` also permits public buyer profiles; `USER_READ_ANY` returns full tenant profiles, including suspended targets. Deleted and platform-administrator targets are always hidden with 404 `PROFILE_NOT_FOUND`. Suspended targets are hidden without `USER_READ_ANY`. Mixed operator/participant accounts may expose their public participant projection; operator roles and private fields remain absent. `PLATFORM_ADMIN` alone grants no additional tenant access. Directory access remains planned.
+
+Profile reads validate that the resolved tenant exists and is active before loading the target. Guests require `X-Tenant-ID`; missing/malformed tenant context returns 400 `TENANT_CONTEXT_MISSING`, unknown tenants return 404 `TENANT_NOT_FOUND`, and inactive tenants return 403 `TENANT_SUSPENDED`. Authenticated reads use the signed principal's tenant and ignore conflicting headers. A missing, cross-tenant, or hidden target returns the same 404 `PROFILE_NOT_FOUND`. Public JSON contains only `id`, `display_name`, `avatar_url`, `member_since`, and `seller_rating: null`. Full JSON uses the documented email/roles/status/creation/suspension fields and `seller_rating: null`. Ratings remain unimplemented. These checks apply to the requested profile/tenant; global authentication-time account-status checks remain deferred.
 
 V12 was edited in place with the project owner's authorization during development. The updated seeds apply when migrations run against a recreated database; an existing migrated database is not updated by editing the file. This change does not recreate or delete a database volume.
 
@@ -182,7 +185,7 @@ For new endpoints, keep 409 for resource-state conflicts and 422 for other busin
 
 **Request-body errors (Phase 3):** unreadable or missing JSON bodies now return 400 `VALIDATION_ERROR` through `HttpMessageNotReadableException` handling. This shared correction also applies to auth request bodies, which previously fell through to the generic 500 handler. Sparse profile updates validate supplied values and unsupported fields explicitly, returning snake-case field names in `{field, message}` details. Existing Jakarta validation remains in use for auth DTOs.
 
-**Gaps:** query/path type conversion and routing failures lack dedicated advice mappings and must not be assumed to yield the intended 400/404 contract; the broad exception handler can classify otherwise unhandled MVC exceptions as 500.
+`UserController` maps invalid path/query value types to 400 `INVALID_PARAMETER`, including a malformed profile UUID. Other controllers' query/path conversion and routing failures lack dedicated advice mappings and must not be assumed to yield the intended 400/404 contract; the broad exception handler can classify otherwise unhandled MVC exceptions as 500.
 
 Evidence: [global exception handler](../src/main/java/com/osporo/engine/shared/exception/GlobalExceptionHandler.java), [error envelope](../src/main/java/com/osporo/engine/shared/response/ErrorEnvelope.java), [error codes](../src/main/java/com/osporo/engine/shared/enums/ErrorCode.java), [exception types](../src/main/java/com/osporo/engine/shared/exception/).
 
@@ -205,5 +208,7 @@ There is no implementation of this mechanism or these financial routes. Before e
 The [auth integration test source](../src/test/java/com/osporo/engine/auth/AuthControllerIntegrationTest.java) declares `AuthControllerIntegrationTest` and exercises HTTP registration, duplicate email, validation, missing tenant header, login, refresh rotation, and logout invalidation with PostgreSQL Testcontainers. It asserts `meta.requestId` and snake-case token fields. [Auth service unit tests](../src/test/java/com/osporo/engine/auth/AuthServiceTest.java) cover service success and failure paths. [JWT service tests](../src/test/java/com/osporo/engine/auth/JwtServiceTest.java) cover configured access-token lifetime in seconds. These are existing test definitions, not a report of a test run for this document.
 
 Own-profile coverage is in [HTTP tests](../src/test/java/com/osporo/engine/user/UserControllerTest.java) and [PostgreSQL integration tests](../src/test/java/com/osporo/engine/user/UserServiceIntegrationTest.java), including scoped identity, token permissions, private-field exclusion, and missing/invalid/expired authentication. [Security handler tests](../src/test/java/com/osporo/engine/shared/security/SecurityErrorHandlerTest.java) cover the 401/403 envelopes. These are test definitions; report execution results separately. Coverage does not yet establish platform permission isolation, pagination, tracing, idempotency, or a complete tenant-isolation boundary across future workflows.
+
+Public/full profile coverage is in [policy tests](../src/test/java/com/osporo/engine/user/UserAuthorizationPolicyTest.java) and [PostgreSQL HTTP integration tests](../src/test/java/com/osporo/engine/user/UserProfileIntegrationTest.java). They cover read-permission precedence, role combinations, hidden account states, tenant resolution/isolation, active-tenant validation, and exact response field sets.
 
 For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Explain changes to existing contracts and keep them under `/v1` until the project owner directs otherwise. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.

@@ -21,7 +21,7 @@ Read the [project vision](docs/PROJECT_VISION.md) for the full context.
 | Authentication | Registration, login, JWT access tokens, persisted refresh tokens, refresh-token rotation, and logout through `/v1/auth`. Passwords use BCrypt. |
 | Tenant-aware identity | Registration and login resolve users within a tenant. Public auth requests use `X-Tenant-ID`; authenticated requests resolve tenant context from JWT claims. |
 | Roles and permissions | Tenant role configuration is stored in PostgreSQL. Login and refresh resolve permissions from the user's roles and include them in access tokens and Spring Security authorities. |
-| Users and tenants | Entities, repositories, and services exist; dedicated user and tenant management REST controllers are not implemented. |
+| Users and tenants | Own-profile GET/PATCH and permission-based public/full profile reads are implemented. Tenant management REST endpoints remain planned. |
 | API foundations | Request validation, response records, exception handling, and OpenAPI/Swagger dependencies. |
 | Database | Flyway migrations V1–V12, including a default marketplace and role configuration seeds. Schemas also exist for planned marketplace domains. |
 | Development and tests | Gradle wrapper, Docker Compose, authentication unit tests, a Spring context test, authentication integration tests using Testcontainers, and a GitHub Actions build workflow. |
@@ -172,6 +172,9 @@ The current REST endpoints are:
 | POST | `/v1/auth/login` | Validates tenant-scoped credentials and returns tokens; returns 200. |
 | POST | `/v1/auth/refresh` | Rotates a valid refresh token and issues a new token pair; returns 200. |
 | POST | `/v1/auth/logout` | Invalidates the supplied refresh token; returns 204 without a body. |
+| GET | `/v1/users/me` | Returns the authenticated account's profile and token permissions. |
+| PATCH | `/v1/users/me` | Updates only the authenticated account's display name and avatar URL. |
+| GET | `/v1/users/{id}` | Returns a public or full profile within an active tenant according to caller permissions. Guests supply `X-Tenant-ID`. |
 
 Registration and login accept an email and password (minimum eight characters) and require the tenant UUID in `X-Tenant-ID`. Discover the seeded tenant UUID in the development database:
 

@@ -7,6 +7,11 @@ import com.osporo.engine.shared.security.OsporoPrincipal;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.osporo.engine.user.dto.UpdateUserProfileRequest;
+import com.osporo.engine.tenant.TenantRepository;
+import com.osporo.engine.tenant.model.Tenant;
+import com.osporo.engine.shared.enums.TenantStatus;
+import com.osporo.engine.shared.exception.TenantNotFoundException;
+import com.osporo.engine.shared.exception.TenantSuspendedException;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -16,13 +21,19 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final TenantContextHolder tenantContextHolder;
+    private final TenantRepository tenantRepository;
+    private final UserAuthorizationPolicy userAuthorizationPolicy;
 
     public UserService (
             UserRepository userRepository,
-            TenantContextHolder tenantContextHolder
+            TenantContextHolder tenantContextHolder,
+            TenantRepository tenantRepository,
+            UserAuthorizationPolicy userAuthorizationPolicy
     ) {
         this.userRepository = userRepository;
         this.tenantContextHolder = tenantContextHolder;
+        this.tenantRepository = tenantRepository;
+        this.userAuthorizationPolicy = userAuthorizationPolicy;
     }
 
     public User getUser(UUID id) {
@@ -35,6 +46,23 @@ public class UserService {
     public User getOwnProfile(OsporoPrincipal principal) {
         return userRepository.findByIdAndTenantId(principal.getUserId(), principal.getTenantId())
                 .orElseThrow(ProfileNotFoundException::new);
+    }
+
+    public User getUserProfile(UUID id, OsporoPrincipal principal) {
+        UUID tenantId = principal == null ? tenantContextHolder.getTenantId() : principal.getTenantId();
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new TenantNotFoundException(tenantId));
+
+        if (tenant.getStatus() != TenantStatus.ACTIVE) {
+            throw new TenantSuspendedException(tenantId);
+        }
+
+        User user = userRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(ProfileNotFoundException::new);
+
+        userAuthorizationPolicy.requireVisibleProfile(user, principal);
+
+        return user;
     }
 
     @Transactional

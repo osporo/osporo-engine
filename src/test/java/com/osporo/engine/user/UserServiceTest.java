@@ -9,6 +9,12 @@ import tools.jackson.databind.ObjectMapper;
 import com.osporo.engine.shared.security.TenantContextHolder;
 import com.osporo.engine.shared.security.OsporoPrincipal;
 import com.osporo.engine.user.model.User;
+import com.osporo.engine.tenant.TenantRepository;
+import com.osporo.engine.tenant.model.Tenant;
+import com.osporo.engine.shared.enums.TenantStatus;
+import com.osporo.engine.shared.enums.RoleType;
+import com.osporo.engine.shared.exception.TenantNotFoundException;
+import com.osporo.engine.shared.exception.TenantSuspendedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +40,11 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private TenantRepository tenantRepository;
+
+    private final UserAuthorizationPolicy userAuthorizationPolicy = new UserAuthorizationPolicy();
+
     private final TenantContextHolder tenantContextHolder = new TenantContextHolder();
 
     @AfterEach
@@ -53,7 +64,7 @@ class UserServiceTest {
         when(userRepository.findByIdAndTenantId(userId, tenantId))
                 .thenReturn(Optional.of(user));
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
 
         assertThat(userService.getUser(userId)).isSameAs(user);
         verify(userRepository).findByIdAndTenantId(userId, tenantId);
@@ -69,7 +80,7 @@ class UserServiceTest {
         when(userRepository.findByIdAndTenantId(userId, tenantId))
                 .thenReturn(Optional.empty());
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
 
         assertThatThrownBy(() -> userService.getUser(userId))
                 .isInstanceOfSatisfying(ProfileNotFoundException.class, exception -> {
@@ -84,7 +95,7 @@ class UserServiceTest {
 
     @Test
     void getUser_shouldRejectMissingTenantBeforeQueryingRepository() {
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
 
         assertThatThrownBy(() -> userService.getUser(UUID.randomUUID()))
                 .isInstanceOfSatisfying(OsporoException.class, exception -> {
@@ -106,7 +117,7 @@ class UserServiceTest {
         when(userRepository.findByIdAndTenantId(userId, tenantId))
                 .thenReturn(Optional.of(user));
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
 
         assertThat(userService.getOwnProfile(principal)).isSameAs(user);
         verify(userRepository).findByIdAndTenantId(userId, tenantId);
@@ -122,7 +133,7 @@ class UserServiceTest {
         when(userRepository.findByIdAndTenantId(userId, tenantId))
                 .thenReturn(Optional.empty());
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
 
         assertThatThrownBy(() -> userService.getOwnProfile(principal))
                 .isInstanceOf(ProfileNotFoundException.class);
@@ -138,7 +149,7 @@ class UserServiceTest {
         OffsetDateTime previousUpdate = user.getUpdatedAt();
         UpdateUserProfileRequest request = profileUpdate("{\"display_name\":\"  New Name  \"}");
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
         User result = userService.updateOwnProfile(principal, request);
 
         assertThat(result).isSameAs(user);
@@ -154,7 +165,7 @@ class UserServiceTest {
         User user = userForUpdate(principal);
         UpdateUserProfileRequest request = profileUpdate("{\"avatar_url\":null}");
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
         userService.updateOwnProfile(principal, request);
 
         assertThat(user.getAvatarUrl()).isNull();
@@ -171,7 +182,7 @@ class UserServiceTest {
         UpdateUserProfileRequest request = profileUpdate(
                 "{\"display_name\":\"  " + displayName + "  \",\"avatar_url\":\"" + avatarUrl + "\"}");
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
         userService.updateOwnProfile(principal, request);
 
         assertThat(user.getDisplayName()).isEqualTo(displayName);
@@ -183,7 +194,7 @@ class UserServiceTest {
         OsporoPrincipal principal = new OsporoPrincipal(UUID.randomUUID(), UUID.randomUUID(), List.of());
         User user = userForUpdate(principal);
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
         userService.updateOwnProfile(principal, profileUpdate("{}"));
 
         assertThat(user.getDisplayName()).isEqualTo("Original Name");
@@ -196,7 +207,7 @@ class UserServiceTest {
         UpdateUserProfileRequest request = profileUpdate(
                 "{\"display_name\":\"New Name\",\"avatar_url\":\"http://example.com/avatar.png\"}");
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
 
         assertThatThrownBy(() -> userService.updateOwnProfile(principal, request))
                 .isInstanceOf(RequestValidationException.class);
@@ -211,7 +222,7 @@ class UserServiceTest {
         OsporoPrincipal principal = new OsporoPrincipal(userId, tenantId, List.of());
         when(userRepository.findByIdAndTenantId(userId, tenantId)).thenReturn(Optional.empty());
 
-        UserService userService = new UserService(userRepository, tenantContextHolder);
+        UserService userService = createUserService();
 
         assertThatThrownBy(() -> userService.updateOwnProfile(principal, profileUpdate("{}")))
                 .isInstanceOf(ProfileNotFoundException.class);
@@ -233,6 +244,69 @@ class UserServiceTest {
         when(userRepository.save(user)).thenReturn(user);
 
         return user;
+    }
+
+    private UserService createUserService() {
+        return new UserService(
+                userRepository,
+                tenantContextHolder,
+                tenantRepository,
+                userAuthorizationPolicy
+        );
+    }
+
+    @Test
+    void getUserProfile_shouldRequireTenantContextForGuest() {
+        assertThatThrownBy(() -> createUserService().getUserProfile(UUID.randomUUID(), null))
+                .isInstanceOfSatisfying(OsporoException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.TENANT_CONTEXT_MISSING));
+
+        verifyNoInteractions(tenantRepository, userRepository);
+    }
+
+    @Test
+    void getUserProfile_shouldUsePrincipalTenantInsteadOfHeaderContext() {
+        UUID userId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        tenantContextHolder.setTenantId(UUID.randomUUID());
+        OsporoPrincipal principal = new OsporoPrincipal(UUID.randomUUID(), tenantId, List.of());
+        Tenant tenant = new Tenant();
+        tenant.setStatus(TenantStatus.ACTIVE);
+        User user = new User();
+        user.setRoles(List.of(RoleType.SELLER));
+
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(userRepository.findByIdAndTenantId(userId, tenantId)).thenReturn(Optional.of(user));
+
+        assertThat(createUserService().getUserProfile(userId, principal)).isSameAs(user);
+        verify(userRepository).findByIdAndTenantId(userId, tenantId);
+        verifyNoMoreInteractions(userRepository);
+    }
+
+    @Test
+    void getUserProfile_shouldRejectUnknownTenantBeforeLookingUpTarget() {
+        UUID tenantId = UUID.randomUUID();
+        tenantContextHolder.setTenantId(tenantId);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> createUserService().getUserProfile(UUID.randomUUID(), null))
+                .isInstanceOf(TenantNotFoundException.class);
+
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void getUserProfile_shouldRejectInactiveTenantBeforeLookingUpTarget() {
+        UUID tenantId = UUID.randomUUID();
+        tenantContextHolder.setTenantId(tenantId);
+        Tenant tenant = new Tenant();
+        tenant.setStatus(TenantStatus.SUSPENDED);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+
+        assertThatThrownBy(() -> createUserService().getUserProfile(UUID.randomUUID(), null))
+                .isInstanceOf(TenantSuspendedException.class);
+
+        verifyNoInteractions(userRepository);
     }
 
     private UpdateUserProfileRequest profileUpdate(String json) {

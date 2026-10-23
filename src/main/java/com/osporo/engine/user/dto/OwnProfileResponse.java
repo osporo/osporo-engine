@@ -7,9 +7,15 @@ import java.util.UUID;
 
 public record OwnProfileResponse(
         UUID id,
-        @JsonProperty("display_name") String displayName,
+
+        @JsonProperty("display_name")
+        String displayName,
+
         String email,
-        @JsonProperty("avatar_url") String avatarUrl,
+
+        @JsonProperty("avatar_url")
+        String avatarUrl,
+        
         List<String> roles,
         List<String> permissions
 ) {
