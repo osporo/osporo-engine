@@ -12,6 +12,8 @@ import com.osporo.engine.tenant.model.Tenant;
 import com.osporo.engine.shared.enums.TenantStatus;
 import com.osporo.engine.shared.exception.TenantNotFoundException;
 import com.osporo.engine.shared.exception.TenantSuspendedException;
+import com.osporo.engine.user.dto.UserDirectoryQuery;
+import org.springframework.data.domain.Page;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -50,12 +52,7 @@ public class UserService {
 
     public User getUserProfile(UUID id, OsporoPrincipal principal) {
         UUID tenantId = principal == null ? tenantContextHolder.getTenantId() : principal.getTenantId();
-        Tenant tenant = tenantRepository.findById(tenantId)
-                .orElseThrow(() -> new TenantNotFoundException(tenantId));
-
-        if (tenant.getStatus() != TenantStatus.ACTIVE) {
-            throw new TenantSuspendedException(tenantId);
-        }
+        requireActiveTenant(tenantId);
 
         User user = userRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(ProfileNotFoundException::new);
@@ -63,6 +60,24 @@ public class UserService {
         userAuthorizationPolicy.requireVisibleProfile(user, principal);
 
         return user;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<User> getUserDirectory(OsporoPrincipal principal, UserDirectoryQuery filters) {
+        userAuthorizationPolicy.requireDirectoryAccess(principal);
+        UUID tenantId = principal.getTenantId();
+        requireActiveTenant(tenantId);
+
+        return userRepository.findDirectory(tenantId, filters);
+    }
+
+    private void requireActiveTenant(UUID tenantId) {
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new TenantNotFoundException(tenantId));
+
+        if (tenant.getStatus() != TenantStatus.ACTIVE) {
+            throw new TenantSuspendedException(tenantId);
+        }
     }
 
     @Transactional

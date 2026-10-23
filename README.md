@@ -157,7 +157,6 @@ On Windows, substitute `.\gradlew.bat` for `./gradlew`.
 
 The full suite requires a Docker daemon for Testcontainers. Authentication integration tests provision their own PostgreSQL container; the separate application context test needs datasource and JWT configuration supplied through the environment. The HTTP integration test is `AuthControllerIntegrationTest.java`; its filename matches the declared test class for IDE discovery.
 
-GitHub Actions runs `./gradlew clean build --no-daemon` on pushes and pull requests targeting `main` or `develop`, supplies a PostgreSQL service, and uploads test results. Its JWT signing secret comes from the repository's `JWT_SECRET` Actions secret. The Docker image build skips tests; use Gradle or CI to run them.
 
 These commands describe the configured workflows, not a claim that the full suite currently passes.
 
@@ -175,6 +174,7 @@ The current REST endpoints are:
 | GET | `/v1/users/me` | Returns the authenticated account's profile and token permissions. |
 | PATCH | `/v1/users/me` | Updates only the authenticated account's display name and avatar URL. |
 | GET | `/v1/users/{id}` | Returns a public or full profile within an active tenant according to caller permissions. Guests supply `X-Tenant-ID`. |
+| GET | `/v1/users` | Requires `USER_READ_ANY`; returns tenant-scoped user summaries with role/status filters and pagination. |
 
 Registration and login accept an email and password (minimum eight characters) and require the tenant UUID in `X-Tenant-ID`. Discover the seeded tenant UUID in the development database:
 

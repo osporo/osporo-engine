@@ -4,7 +4,7 @@ Source: **Osporo API v1.docx**, User Domain. Converted and checked against the r
 
 Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
 
-**Status:** Partially implemented. `GET /v1/users/me`, `PATCH /v1/users/me`, and `GET /v1/users/{id}` are implemented; the other five routes remain planned.
+**Status:** Partially implemented. `GET /v1/users`, `GET /v1/users/me`, `PATCH /v1/users/me`, and `GET /v1/users/{id}` are implemented; the other four routes remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
@@ -15,6 +15,8 @@ Phase 1 foundation (2026-10-22): [UserService.getUser](../../src/main/java/com/o
 Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. Phase 3 (2026-10-23) adds `PATCH /v1/users/me` with sparse-field validation and transactional updates. Their implemented contracts are described in sections 3 and 7 below. Authentication-time account-status enforcement belongs to a later phase, and token versioning is deferred.
 
 Phase 4 (2026-10-23) adds `GET /v1/users/{id}`, `UserAuthorizationPolicy`, and separate public/full DTOs, implementing section 4 below. It validates the requested tenant and filters target account status. Global authentication-time account-status enforcement and token versioning remain deferred.
+
+Phase 5 adds `GET /v1/users`, requiring `USER_READ_ANY` and querying the authenticated principal's active tenant through a custom repository fragment. Section 2 below documents role/lifecycle filtering, approved sorting, and pagination. Authentication-time status checks remain a later phase.
 
 Open details from the source:
 
@@ -141,7 +143,7 @@ Error: BUSINESS_RULE_VIOLATION
 
 `GET /v1/users`
 
-Allows a user to fetch all users in a marketplace.
+**Implemented in Phase 5.** Returns user summaries within the authenticated principal's tenant, requiring `USER_READ_ANY` before validating filters. A conflicting `X-Tenant-ID` cannot change the selected tenant. The tenant must exist and be active. Platform-administrator accounts are excluded even when they also carry tenant roles.
 
 #### Parameters
 
@@ -152,6 +154,7 @@ Allows a user to fetch all users in a marketplace.
 | sort | CREATED_AT | CREATED_AT, DELETED_AT, UPDATED_AT, SUSPENDED_AT | Field to sort by |
 | order | desc | asc \| desc | Sort direction |
 | roles | [BUYER, SELLER, MARKETPLACE_STAFF, MARKETPLACE_OWNER] | BUYER, SELLER, MARKETPLACE_STAFF, MARKETPLACE_OWNER | Roles to filter by, provided as a list; OSPORO_ADMIN is a platform role and is excluded from this tenant endpoint |
+| status | Active and suspended accounts | ACTIVE, SUSPENDED, DELETED, ALL | Explicit lifecycle filter; omitted status excludes deleted accounts |
 
 The role catalogue is:
 
@@ -164,6 +167,10 @@ The role catalogue is:
 | `OSPORO_ADMIN` | Platform administration | No |
 
 The `roles` filter selects records within the resolved tenant; it never grants access or changes tenant scope. `OSPORO_ADMIN` is a valid engine role, but platform administrators are outside this tenant directory's intended visibility. Requests filtering by it retain the `INVALID_PARAMETER` response described below.
+
+Supply repeated role parameters, for example `GET /v1/users?roles=BUYER&roles=SELLER`. Any requested role may match; a multi-role account appears once. Duplicate role values are harmless. Comma-separated role values, unsupported filters, and repeated values for single-value parameters are rejected with 400 `INVALID_PARAMETER`.
+
+`ACTIVE` means neither deleted nor suspended. `SUSPENDED` excludes deleted accounts; `DELETED` includes deleted accounts regardless of suspension state. `ALL` includes all lifecycle states, with tenant scoping and platform-account exclusion still enforced. Sorting uses the requested timestamp/direction, nulls last, and ascending UUID as a deterministic tie-breaker. Out-of-range pages return an empty list while preserving the filtered total.
 
 #### Permissions
 
@@ -196,7 +203,7 @@ No body
         "MARKETPLACE_STAFF"
       ],
       "avatar_url": "https://...",
-      "created_at": "2025-05-01T00:00:00+02:00"
+      "created_at": "2026-03-16T00:00:00+02:00"
     },
     {
       "id": "uuid",
@@ -207,23 +214,17 @@ No body
         "SELLER"
       ],
       "avatar_url": "https://...",
-      "created_at": "2026-03-17T00:00:00+02:00"
+      "created_at": "2026-03-15T00:00:00+02:00"
     }
   ],
   "meta": {
-    "request_id": "uuid",
+    "requestId": "uuid",
     "pagination": {
       "page": 1,
-      "per_page": 20,
+      "perPage": 20,
       "total": 143,
-      "total_pages": 8
-    },
-    "filter_roles": [
-      "MARKETPLACE_OWNER",
-      "MARKETPLACE_STAFF",
-      "BUYER",
-      "SELLER"
-    ]
+      "totalPages": 8
+    }
   }
 }
 ```
@@ -238,8 +239,7 @@ No body
 {
   "error": {
     "code": "INSUFFICIENT_PERMISSIONS",
-    "message": "Not authorized to access this endpoint",
-    "request_id": "uuid",
+    "message": "You are not authorized to perform this action.",
     "details": []
   }
 }
@@ -253,14 +253,8 @@ Error: INSUFFICIENT_PERMISSIONS
 {
   "error": {
     "code": "INVALID_PARAMETER",
-    "message": "The roles filter contains an invalid or unsupported value.",
-    "request_id": "uuid",
-    "details": [
-      {
-        "field": "roles",
-        "message": "OSPORO_ADMIN is not a valid filter value."
-      }
-    ]
+    "message": "The roles parameter has an invalid or unsupported value.",
+    "details": []
   }
 }
 ```
@@ -268,6 +262,8 @@ Error: INSUFFICIENT_PERMISSIONS
 400 Bad Request
 
 Error: INVALID_PARAMETER
+
+Missing or rejected authentication returns 401 `INVALID_TOKEN`. Missing/inactive tenants return 404 `TENANT_NOT_FOUND` / 403 `TENANT_SUSPENDED`. Successful metadata uses `requestId`, `perPage`, and `totalPages`; `filter_roles` is omitted. Errors have no request ID. Summary fields are `id`, `display_name`, `email`, `roles`, `avatar_url`, and `created_at`; nullable profile fields remain present.
 
 ### 3) Get own profile
 

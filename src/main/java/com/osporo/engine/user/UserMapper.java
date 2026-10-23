@@ -4,6 +4,7 @@ import com.osporo.engine.shared.enums.RoleType;
 import com.osporo.engine.user.dto.OwnProfileResponse;
 import com.osporo.engine.user.dto.PublicUserProfileResponse;
 import com.osporo.engine.user.dto.FullUserProfileResponse;
+import com.osporo.engine.user.dto.UserSummaryResponse;
 import com.osporo.engine.user.model.User;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +12,17 @@ import java.util.List;
 
 @Component
 public class UserMapper {
+
+    public UserSummaryResponse toSummaryResponse(User user) {
+        return new UserSummaryResponse(
+                user.getId(),
+                user.getDisplayName(),
+                user.getEmail(),
+                user.getRoles().stream().map(RoleType::name).toList(),
+                user.getAvatarUrl(),
+                user.getCreatedAt()
+        );
+    }
 
     public PublicUserProfileResponse toPublicProfileResponse(User user) {
         return new PublicUserProfileResponse(

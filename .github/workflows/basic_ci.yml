@@ -5,10 +5,19 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -44,14 +53,18 @@ jobs:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/osporo_test
           SPRING_DATASOURCE_USERNAME: test_user
           SPRING_DATASOURCE_PASSWORD: test_pass
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          # Public, test-only signing key: CI must also work for fork pull requests.
+          JWT_SECRET: dGVzdC1zZWNyZXQta2V5LXRoYXQtaXMtbG9uZy1lbm91Z2gtZm9yLWhtYWM=
           JWT_ACCESS_TOKEN_EXPIRY: 900
           JWT_REFRESH_TOKEN_EXPIRY: 604800
-        run: ./gradlew clean build --no-daemon
+        run: ./gradlew clean build --no-daemon --console=plain
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: build/test-results/test/
+          path: |
+            build/test-results/test/
+            build/reports/tests/test/
+          retention-days: 7

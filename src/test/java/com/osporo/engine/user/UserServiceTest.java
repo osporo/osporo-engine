@@ -15,6 +15,10 @@ import com.osporo.engine.shared.enums.TenantStatus;
 import com.osporo.engine.shared.enums.RoleType;
 import com.osporo.engine.shared.exception.TenantNotFoundException;
 import com.osporo.engine.shared.exception.TenantSuspendedException;
+import com.osporo.engine.shared.exception.InsufficientPermissionsException;
+import com.osporo.engine.user.dto.UserDirectoryQuery;
+import org.springframework.data.domain.Page;
+import org.springframework.util.LinkedMultiValueMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -311,5 +315,35 @@ class UserServiceTest {
 
     private UpdateUserProfileRequest profileUpdate(String json) {
         return new ObjectMapper().readValue(json, UpdateUserProfileRequest.class);
+    }
+
+    @Test
+    void getUserDirectory_shouldRequirePermissionBeforeTenantOrUserQueries() {
+        OsporoPrincipal principal = new OsporoPrincipal(
+                UUID.randomUUID(), UUID.randomUUID(), List.of("USER_READ_PUBLIC"));
+        UserDirectoryQuery filters = UserDirectoryQuery.from(new LinkedMultiValueMap<>());
+
+        assertThatThrownBy(() -> createUserService().getUserDirectory(principal, filters))
+                .isInstanceOf(InsufficientPermissionsException.class);
+
+        verifyNoInteractions(tenantRepository, userRepository);
+    }
+
+    @Test
+    void getUserDirectory_shouldUsePrincipalTenantAndValidatedFilters() {
+        UUID tenantId = UUID.randomUUID();
+        tenantContextHolder.setTenantId(UUID.randomUUID());
+        OsporoPrincipal principal = new OsporoPrincipal(UUID.randomUUID(), tenantId, List.of("USER_READ_ANY"));
+        UserDirectoryQuery filters = UserDirectoryQuery.from(new LinkedMultiValueMap<>());
+        Tenant tenant = new Tenant();
+        tenant.setStatus(TenantStatus.ACTIVE);
+        Page<User> users = Page.empty();
+
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(userRepository.findDirectory(tenantId, filters)).thenReturn(users);
+
+        assertThat(createUserService().getUserDirectory(principal, filters)).isSameAs(users);
+        verify(userRepository).findDirectory(tenantId, filters);
+        verifyNoMoreInteractions(userRepository);
     }
 }
