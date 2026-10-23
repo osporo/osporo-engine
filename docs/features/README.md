@@ -1,13 +1,13 @@
 # Domain API documentation
 
-This directory contains ten domain API references, initially converted from **Osporo API v1.docx**, covering 71 endpoints. Authentication documents the current implementation and supersedes its original design; the other domains document planned endpoint contracts and source gaps, with subsequent design revisions identified in each file. Authentication was reviewed on 2026-10-20; planned-domain implementation status was checked on 2026-10-19. The users role catalogue and permission-based profile visibility design were updated on 2026-10-20.
+This directory contains ten domain API references, initially converted from **Osporo API v1.docx**, covering 71 endpoints. Authentication documents the current implementation and supersedes its original design; users now includes the implemented own-profile GET alongside planned routes. The other domains document planned endpoint contracts and source gaps, with subsequent design revisions identified in each file. Authentication was reviewed on 2026-10-20; planned-domain implementation status was checked on 2026-10-19. The users role catalogue and permission-based profile visibility design were updated on 2026-10-20; own-profile GET was added on 2026-10-22.
 
 ## Domains
 
 | Domain | Endpoints | Implementation status |
 | --- | --- | --- |
 | [Authentication](auth.md) | 4 | Current implementation |
-| [Users](users.md) | 8 | Planned |
+| [Users](users.md) | 8 | Own-profile GET implemented; 7 routes planned |
 | [Categories](categories.md) | 6 | Planned |
 | [Listings](listings.md) | 15 | Planned |
 | [Orders](orders.md) | 10 | Planned |

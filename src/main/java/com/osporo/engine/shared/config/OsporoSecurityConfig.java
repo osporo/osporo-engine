@@ -13,6 +13,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import com.osporo.engine.shared.security.JwtAuthenticationFilter;
+import com.osporo.engine.shared.security.SecurityErrorHandler;
 
 @Configuration
 @EnableWebSecurity
@@ -20,11 +21,14 @@ import com.osporo.engine.shared.security.JwtAuthenticationFilter;
 public class OsporoSecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final SecurityErrorHandler securityErrorHandler;
 
     public OsporoSecurityConfig(
-        JwtAuthenticationFilter jwtAuthenticationFilter
+        JwtAuthenticationFilter jwtAuthenticationFilter,
+        SecurityErrorHandler securityErrorHandler
     ){
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.securityErrorHandler = securityErrorHandler;
     }
 
     @Bean
@@ -37,6 +41,9 @@ public class OsporoSecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
 
                 .anonymous(anonymousUser -> anonymousUser.disable())
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(securityErrorHandler)
+                        .accessDeniedHandler(securityErrorHandler))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.POST, "/v1/auth/register").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/auth/login").permitAll()
@@ -48,6 +55,7 @@ public class OsporoSecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/listings/{id}").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/categories").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/categories/{id}").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/users/me").authenticated()
                         .requestMatchers(HttpMethod.GET, "/v1/users/{id}").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/users/{id}/listings").permitAll()
                         .requestMatchers(HttpMethod.GET, "/ping").permitAll()

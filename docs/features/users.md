@@ -4,13 +4,15 @@ Source: **Osporo API v1.docx**, User Domain. Converted and checked against the r
 
 Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
 
-**Status:** Planned API; no controller implements these routes.
+**Status:** Partially implemented. `GET /v1/users/me` is implemented; the other seven routes remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
 ## Implementation notes and open decisions
 
-No user controller implements these routes. Phase 1 foundation (2026-10-22): [UserService.getUser](../../src/main/java/com/osporo/engine/user/UserService.java) loads by ID within the current tenant context. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; absent tenant context raises 400 `TENANT_CONTEXT_MISSING`. The user entity permits a null display name, matching the database and registration behavior. This loading method does not implement profile visibility or account-status filtering. The source's profile visibility, invitations, suspension hierarchy, audit responses, and deletion behavior remain designs, not implemented guarantees.
+Phase 1 foundation (2026-10-22): [UserService.getUser](../../src/main/java/com/osporo/engine/user/UserService.java) loads by ID within the current tenant context. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; absent tenant context raises 400 `TENANT_CONTEXT_MISSING`. The user entity permits a null display name, matching the database and registration behavior. This loading method does not implement profile visibility or account-status filtering.
+
+Phase 2 adds `GET /v1/users/me` through `UserController`, `UserService.getOwnProfile`, and `UserMapper`. The implemented contract is described in section 3 below. Other sections remain planned designs. Account-status enforcement belongs to a later phase, and token versioning is deferred.
 
 Open details from the source:
 
@@ -269,7 +271,7 @@ Error: INVALID_PARAMETER
 
 `GET /v1/users/me`
 
-This endpoint is used by the client to tell which user is currently logged in, what their roles are and what they can do.
+**Implemented in Phase 2.** Returns the authenticated account using the signed principal's user and tenant IDs. It accepts no user selection from headers, query parameters, or a body. Roles come from the current account; permissions come from the access token and describe the authorities enforced for that request. The response contains only the six fields shown below, with nullable display name and avatar fields retained. Account-status checks are deferred to Phase 6; this endpoint does not yet reject a suspended/deleted account solely because of its database status.
 
 #### Parameters
 
@@ -303,7 +305,8 @@ No body
     ]
   },
   "meta": {
-    "request_id": "uuid"
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
@@ -318,8 +321,7 @@ No body
 {
   "error": {
     "code": "INVALID_TOKEN",
-    "message": "Token is invalid or has expired",
-    "request_id": "uuid",
+    "message": "Authentication is required. Supply a valid access token.",
     "details": []
   }
 }
@@ -328,6 +330,8 @@ No body
 401 Unauthorized
 
 Error: INVALID_TOKEN
+
+Missing, malformed, or expired access tokens return 401 `INVALID_TOKEN` with `WWW-Authenticate: Bearer`. A missing account or a token user/tenant pair that matches no account returns 404 `PROFILE_NOT_FOUND`. Errors use `{error: {code, message, details}}` without a request ID.
 
 ### 4) Get user profile
 

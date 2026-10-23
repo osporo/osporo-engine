@@ -14,7 +14,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 
 ## 1. API surface and versioning
 
-**Current contract:** business API routes use `/v1`. The implemented business controller is `AuthController`; `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
+**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements own-profile reads; `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
 
 | Method | Path | Request body | Success | Tenant source |
 | --- | --- | --- | --- | --- |
@@ -22,6 +22,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | POST | `/v1/auth/login` | `email`, `password` | 200; token pair | Request tenant context |
 | POST | `/v1/auth/refresh` | `refresh_token` | 200; new token pair | Stored refresh token |
 | POST | `/v1/auth/logout` | `refresh_token` | 204; no body | Refresh token lookup |
+| GET | `/v1/users/me` | None | 200; own profile and token permissions | Authenticated principal |
 | GET | `/ping` | None | 200; `pong` | None |
 
 The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. A matcher is not an endpoint implementation: there are no corresponding domain controllers for listings, categories, orders, payments, messaging, or moderation in the reviewed source. Likewise, migrations and permission constants do not establish endpoint availability.
@@ -30,7 +31,7 @@ The four auth routes permit requests without an access token. Security matchers 
 
 Deployments supply their own origin. `https://api.osporo.dev/v1/` in the original document is an illustrative hosted address, not a verified deployment or a required self-hosted hostname. Tenant identifiers are not part of current route paths.
 
-Evidence: [AuthController](../src/main/java/com/osporo/engine/auth/AuthController.java), [application entry point and ping](../src/main/java/com/osporo/engine/OsporoEngineApplication.java), [security configuration](../src/main/java/com/osporo/engine/shared/config/OsporoSecurityConfig.java).
+Evidence: [AuthController](../src/main/java/com/osporo/engine/auth/AuthController.java), [UserController](../src/main/java/com/osporo/engine/user/UserController.java), [application entry point and ping](../src/main/java/com/osporo/engine/OsporoEngineApplication.java), [security configuration](../src/main/java/com/osporo/engine/shared/config/OsporoSecurityConfig.java).
 
 ## 2. Tenant resolution and isolation
 
@@ -47,7 +48,7 @@ User identities belong to one tenant. The database enforces email uniqueness on 
 
 **Gaps:** the original document's JWT-only tenant rule does not describe unauthenticated auth flows. There is no gateway tenant-mismatch rejection or automatic tenant predicate applied to every repository query. New workflows must not assume every service or repository is already isolated.
 
-**User foundation (2026-10-22):** `UserService.getUser` now uses the current tenant context and `findByIdAndTenantId`. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; missing tenant context retains 400 `TENANT_CONTEXT_MISSING`. This is service-level loading, not a public endpoint or profile-visibility policy. User controllers remain unimplemented. The user entity now permits a null display name, matching the existing schema and registration behavior.
+**User foundation (2026-10-22):** `UserService.getUser` uses the current tenant context and `findByIdAndTenantId`. Missing and cross-tenant users both raise 404 `PROFILE_NOT_FOUND`; missing tenant context retains 400 `TENANT_CONTEXT_MISSING`. `GET /v1/users/me` loads the account using the authenticated principal's user and tenant IDs; caller-supplied headers or query IDs cannot select another account. This does not implement public-profile visibility. The user entity permits a null display name, matching the existing schema and registration behavior.
 
 Evidence: [JWT filter](../src/main/java/com/osporo/engine/shared/security/JwtAuthenticationFilter.java), [tenant context](../src/main/java/com/osporo/engine/shared/security/TenantContextHolder.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [user service](../src/main/java/com/osporo/engine/user/UserService.java), [users migration](../src/main/resources/db/migration/V2__create_users.sql).
 
@@ -56,6 +57,8 @@ Evidence: [JWT filter](../src/main/java/com/osporo/engine/shared/security/JwtAut
 **Current contract:** Spring Security uses stateless sessions with form login, HTTP Basic, and anonymous authentication disabled. Other than explicitly permitted routes, requests require authentication. Method security is enabled.
 
 Access tokens are signed JWTs containing `sub` (user UUID), `tenant_id`, `roles`, `permissions`, `iat`, and `exp`. The filter validates the signature and expiry and maps permission strings to Spring authorities. It does not reload the user, tenant status, or permissions from the database on every authenticated request.
+
+`GET /v1/users/me` requires authentication without an additional permission. Its DTO contains only `id`, `display_name`, `email`, `avatar_url`, current database `roles`, and the authenticated token's `permissions`. Nullable profile fields remain present. Missing accounts or mismatched token tenant/user pairs return 404 `PROFILE_NOT_FOUND`. Account-status enforcement is deferred to a later phase; token versioning remains deferred.
 
 Token lifetimes are configured through `JWT_ACCESS_TOKEN_EXPIRY` and `JWT_REFRESH_TOKEN_EXPIRY`, both in **seconds**. There are no application-property defaults. Tests configure 900 seconds and 2,592,000 seconds (15 minutes and 30 days); those values are examples, not guaranteed deployment settings. `expires_in` reports the configured access-token lifetime in seconds.
 
@@ -165,14 +168,16 @@ Validation message wording may vary. Error responses currently contain no `reque
 | 400 | Validation failures and missing tenant context; convention for malformed inputs |
 | 401 | `AUTHENTICATION_FAILED`, `INVALID_TOKEN`; convention for missing/invalid authentication |
 | 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED`, advice-handled `INSUFFICIENT_PERMISSIONS` |
-| 404 | `TENANT_NOT_FOUND`; `LISTING_NOT_FOUND` exception exists without a listing endpoint |
+| 404 | `TENANT_NOT_FOUND`, own-profile `PROFILE_NOT_FOUND`; `LISTING_NOT_FOUND` exception exists without a listing endpoint |
 | 409 | `EMAIL_ALREADY_EXISTS`; convention for conflicts with current resource state |
 | 422 | Convention for structurally valid requests violating a business rule; no current handler establishes a workflow using it |
 | 500 | Unexpected exceptions |
 
 For new endpoints, keep 409 for resource-state conflicts and 422 for other business-rule failures. The original document used an already-sold listing for both; define one status per concrete error and test it. Tenant-owned resources outside the caller's scope should return 404 without revealing another tenant's resource.
 
-**Gaps:** no dedicated JSON authentication entry point or access-denied handler is configured for the security filter chain. Its failures do not necessarily pass through controller advice or produce this envelope; protected-route 401 behavior is not established by current tests. Malformed JSON, type conversion, and routing failures lack dedicated advice mappings and must not be assumed to yield the intended 400/404 contract; the broad exception handler can classify otherwise unhandled MVC exceptions as 500.
+**Security errors:** the security filter chain uses `SecurityErrorHandler` to return the same error envelope. Missing or rejected authentication on protected routes returns 401 `INVALID_TOKEN` with `WWW-Authenticate: Bearer`; authenticated access-denied failures return 403 `INSUFFICIENT_PERMISSIONS`. Errors contain no request ID. The explicit `/v1/users/me` authentication matcher precedes the public `/v1/users/{id}` matcher. Public auth routes retain their existing behavior when a rejected Bearer token is supplied.
+
+**Gaps:** malformed JSON, type conversion, and routing failures lack dedicated advice mappings and must not be assumed to yield the intended 400/404 contract; the broad exception handler can classify otherwise unhandled MVC exceptions as 500.
 
 Evidence: [global exception handler](../src/main/java/com/osporo/engine/shared/exception/GlobalExceptionHandler.java), [error envelope](../src/main/java/com/osporo/engine/shared/response/ErrorEnvelope.java), [error codes](../src/main/java/com/osporo/engine/shared/enums/ErrorCode.java), [exception types](../src/main/java/com/osporo/engine/shared/exception/).
 
@@ -194,6 +199,6 @@ There is no implementation of this mechanism or these financial routes. Before e
 
 The [auth integration test source](../src/test/java/com/osporo/engine/auth/AuthServiceIntegrationTest.java) declares `AuthControllerIntegrationTest` and exercises HTTP registration, duplicate email, validation, missing tenant header, login, refresh rotation, and logout invalidation with PostgreSQL Testcontainers. It asserts `meta.requestId` and snake-case token fields. [Auth service unit tests](../src/test/java/com/osporo/engine/auth/AuthServiceTest.java) cover service success and failure paths. [JWT service tests](../src/test/java/com/osporo/engine/auth/JwtServiceTest.java) cover configured access-token lifetime in seconds. These are existing test definitions, not a report of a test run for this document.
 
-Coverage does not yet establish a complete tenant-isolation boundary, authenticated header/token mismatch behavior, filter-level error contracts, platform permission isolation, pagination, tracing, or idempotency. Add relevant unit and integration coverage when implementing or changing those workflows.
+Own-profile coverage is in [HTTP tests](../src/test/java/com/osporo/engine/user/UserControllerTest.java) and [PostgreSQL integration tests](../src/test/java/com/osporo/engine/user/UserServiceIntegrationTest.java), including scoped identity, token permissions, private-field exclusion, and missing/invalid/expired authentication. [Security handler tests](../src/test/java/com/osporo/engine/shared/security/SecurityErrorHandlerTest.java) cover the 401/403 envelopes. These are test definitions; report execution results separately. Coverage does not yet establish platform permission isolation, pagination, tracing, idempotency, or a complete tenant-isolation boundary across future workflows.
 
 For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Explain changes to existing contracts and keep them under `/v1` until the project owner directs otherwise. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.

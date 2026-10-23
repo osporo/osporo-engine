@@ -4,6 +4,7 @@ import com.osporo.engine.shared.enums.ErrorCode;
 import com.osporo.engine.shared.exception.OsporoException;
 import com.osporo.engine.shared.exception.ProfileNotFoundException;
 import com.osporo.engine.shared.security.TenantContextHolder;
+import com.osporo.engine.shared.security.OsporoPrincipal;
 import com.osporo.engine.user.model.User;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,5 +89,41 @@ class UserServiceTest {
                 });
 
         verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void getOwnProfile_shouldLoadOnlyThePrincipalsAccountAndTenant() {
+        UUID userId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        OsporoPrincipal principal = new OsporoPrincipal(userId, tenantId, List.of());
+        User user = new User();
+
+        tenantContextHolder.setTenantId(UUID.randomUUID());
+        when(userRepository.findByIdAndTenantId(userId, tenantId))
+                .thenReturn(Optional.of(user));
+
+        UserService userService = new UserService(userRepository, tenantContextHolder);
+
+        assertThat(userService.getOwnProfile(principal)).isSameAs(user);
+        verify(userRepository).findByIdAndTenantId(userId, tenantId);
+        verifyNoMoreInteractions(userRepository);
+    }
+
+    @Test
+    void getOwnProfile_shouldRejectMissingOrOutOfTenantAccount() {
+        UUID userId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        OsporoPrincipal principal = new OsporoPrincipal(userId, tenantId, List.of());
+
+        when(userRepository.findByIdAndTenantId(userId, tenantId))
+                .thenReturn(Optional.empty());
+
+        UserService userService = new UserService(userRepository, tenantContextHolder);
+
+        assertThatThrownBy(() -> userService.getOwnProfile(principal))
+                .isInstanceOf(ProfileNotFoundException.class);
+
+        verify(userRepository).findByIdAndTenantId(userId, tenantId);
+        verifyNoMoreInteractions(userRepository);
     }
 }
