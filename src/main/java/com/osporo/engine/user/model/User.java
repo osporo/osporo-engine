@@ -15,10 +15,12 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "users")
+@DynamicUpdate
 @Getter
 @Setter
 @AllArgsConstructor

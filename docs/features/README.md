@@ -7,7 +7,7 @@ This directory contains ten domain API references, initially converted from **Os
 | Domain | Endpoints | Implementation status |
 | --- | --- | --- |
 | [Authentication](auth.md) | 4 | Current implementation |
-| [Users](users.md) | 8 | 4 directory/profile routes implemented; 4 routes planned |
+| [Users](users.md) | 8 | 5 directory, profile, and suspension routes implemented; 3 routes planned |
 | [Categories](categories.md) | 6 | Planned |
 | [Listings](listings.md) | 15 | Planned |
 | [Orders](orders.md) | 10 | Planned |
@@ -19,7 +19,7 @@ This directory contains ten domain API references, initially converted from **Os
 
 ## How to use these references
 
-The original document describes a full API design; it does not establish which features exist. The four auth routes and four user directory/profile routes are implemented. The remaining 63 routes are planned designs. Security matchers, database migrations, enums, or basic services alone do not expose those APIs. The diagnostic `/ping` route is outside this source's domain inventory.
+The original document describes a full API design; it does not establish which features exist. The four auth routes and five user routes are implemented. The remaining 62 routes are planned designs. Security matchers, database migrations, enums, or basic services alone do not expose those APIs. The diagnostic `/ping` route is outside this source's domain inventory.
 
 Read [authentication](auth.md) directly for its implemented contract. For planned domains, read each domain's implementation notes before its source API design. [API standards](../API_STANDARDS.md) describes the current shared contract and overrides conflicting historical conventions; source code and tests establish implemented behavior. [Project vision](../PROJECT_VISION.md) and applicable [ADRs](../adrs/) provide direction. Do not silently resolve an open product or architecture decision by implementing an example literally.
 

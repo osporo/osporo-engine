@@ -1,6 +1,8 @@
 package com.osporo.engine.user;
 
 import com.osporo.engine.shared.enums.RoleType;
+import com.osporo.engine.shared.enums.ErrorCode;
+import com.osporo.engine.shared.exception.OsporoException;
 import com.osporo.engine.shared.exception.ProfileNotFoundException;
 import com.osporo.engine.shared.security.OsporoPrincipal;
 import com.osporo.engine.user.model.User;
@@ -19,6 +21,29 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class UserAuthorizationPolicyTest {
 
     private final UserAuthorizationPolicy policy = new UserAuthorizationPolicy();
+
+    @ParameterizedTest
+    @CsvSource({
+            "OSPORO_ADMIN, MARKETPLACE_OWNER, true",
+            "MARKETPLACE_OWNER, MARKETPLACE_STAFF, true",
+            "MARKETPLACE_STAFF+SELLER, BUYER, true",
+            "MARKETPLACE_STAFF+SELLER, BUYER+MARKETPLACE_STAFF, false",
+            "MARKETPLACE_STAFF, BUYER+MARKETPLACE_OWNER, false",
+            "SELLER, BUYER, false",
+            "BUYER, SELLER, false"
+    })
+    void suspensionRank_shouldUseHighestRoleOnEachAccount(String actorRoles, String targetRoles, boolean allowed) {
+        User actor = targetWithRoles(actorRoles);
+        User target = targetWithRoles(targetRoles);
+
+        if (allowed) {
+            assertThatCode(() -> policy.requireLowerSuspensionRank(actor, target)).doesNotThrowAnyException();
+        } else {
+            assertThatThrownBy(() -> policy.requireLowerSuspensionRank(actor, target))
+                    .isInstanceOfSatisfying(OsporoException.class, exception ->
+                            assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ROLE_HIERARCHY_VIOLATION));
+        }
+    }
 
     @ParameterizedTest
     @CsvSource({

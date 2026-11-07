@@ -4,7 +4,7 @@ Source: **Osporo API v1.docx**, User Domain. Converted and checked against the r
 
 Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
 
-**Status:** Partially implemented. `GET /v1/users`, `GET /v1/users/me`, `PATCH /v1/users/me`, and `GET /v1/users/{id}` are implemented; the other four routes remain planned.
+**Status:** Partially implemented. `GET /v1/users`, `GET /v1/users/me`, `PATCH /v1/users/me`, `GET /v1/users/{id}`, and `POST /v1/users/{id}/suspend` are implemented. The other three routes remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
@@ -20,11 +20,13 @@ Phase 5 adds `GET /v1/users`, requiring `USER_READ_ANY` and querying the authent
 
 Phase 6 (2026-10-23) also aligns login/refresh checks and adds an internal tenant/user-scoped refresh-session revocation operation for future lifecycle endpoints. Suspended accounts and inactive tenants fail with 403; deleted/missing/mismatched Bearer identities fail with 401. Restoring active status can make an old unexpired access token usable again until token versioning is implemented.
 
+Phase 7 implements account suspension and uses Phase 6 revocation to invalidate the target's refresh sessions in the same transaction as the suspension.
+
 Open details from the source:
 
 - `BUSINESS_RULE_VIOLATION` on invitations is not in the current `ErrorCode` enum. Invitation acceptance, token delivery, and validation constraints are not specified here.
 - `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. Phase 4 enforces its public-profile scope; it does not grant directory or private-field access.
-- The suspension hierarchy is defined below. The source hierarchy error detail uses `input`, which differs from the current shared `{field, message}` type.
+- The suspension hierarchy is defined below. The planned unsuspension error example uses `input`, which differs from the current shared `{field, message}` type.
 - Deleting or updating one's own account requires authentication and ownership even where the source says no specific permission. The source does not fully define deleted-account token handling.
 
 Editorial corrections: the list example now represents buyer and seller as two role strings, and `ROLE_HIERARCY_VIOLATION` is corrected to `ROLE_HIERARCHY_VIOLATION`.
@@ -439,7 +441,7 @@ For guests, tenant errors are 400 `TENANT_CONTEXT_MISSING` for missing/malformed
 
 `POST /v1/users/{id}/suspend`
 
-This planned endpoint allows a caller with `USER_SUSPEND` to suspend an account in their own tenant whose rank is strictly lower than theirs.
+**Implemented in Phase 7.** A caller with `USER_SUSPEND` can suspend a strictly lower-ranked account in their own tenant. The validated principal supplies the actor and tenant IDs. A conflicting `X-Tenant-ID` does not change the tenant. The operation records a `SUSPEND` audit entry in `suspensions`, sets the target's `suspended_at` and `updated_at`, and invalidates the target's refresh sessions in one transaction. Existing access tokens are rejected while the account is suspended.
 
 #### Suspension hierarchy
 
@@ -450,19 +452,13 @@ This planned endpoint allows a caller with `USER_SUSPEND` to suspend an account 
 | Marketplace staff | `MARKETPLACE_STAFF` |
 | Marketplace participant | `BUYER`, `SELLER` |
 
-Use the highest currently assigned role on each account. For example, a caller with `MARKETPLACE_STAFF` and `SELLER` ranks as staff. They can suspend a buyer or seller if they have `USER_SUSPEND`, but a target with both `MARKETPLACE_STAFF` and `BUYER` ranks as staff and is therefore a peer. Buyer and seller have equal rank. Equal ranks also prevent self-suspension.
+Use the highest currently assigned role on each account. An account with no roles is treated as participant rank. For example, a caller with `MARKETPLACE_STAFF` and `SELLER` ranks as staff. They can suspend a buyer or seller if they have `USER_SUSPEND`, but a target with both `MARKETPLACE_STAFF` and `BUYER` ranks as staff and is therefore a peer. Buyer and seller have equal rank. Equal ranks also prevent self-suspension.
 
 The hierarchy sets the rank boundary. Permission to suspend still comes from `USER_SUSPEND`. The top rank protects `OSPORO_ADMIN` accounts from tenant operators and does not grant cross-tenant access or platform moderation powers through this endpoint. The same hierarchy applies to lifting a suspension.
 
-#### Parameters
-
-No params
-
-#### Permissions
-
-USER_SUSPEND
-
 #### Request
+
+Use the target's UUID as `id`. `violation_type` is required and must be a nonblank string of at most 500 characters after trimming. `details` is optional and must be a string or null. Omitted or null details are stored as an empty string. Neither field accepts NUL characters.
 
 ```json
 {
@@ -471,7 +467,7 @@ USER_SUSPEND
 }
 ```
 
-#### Response
+#### Response (200 OK)
 
 ```json
 {
@@ -482,71 +478,29 @@ USER_SUSPEND
     "action": "SUSPEND",
     "violation_type": "PAYMENT_FRAUD",
     "details": "User attempted to move payment off of the platform.",
-    "suspended_at": "2026-03-17T09:14:45+02:00"
+    "suspended_at": "2026-03-17T07:14:45Z"
   },
   "meta": {
-    "request_id": "uuid"
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
 
-#### Success
+#### Errors
 
-200 OK
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `INVALID_PARAMETER` | Malformed target UUID |
+| 400 | `VALIDATION_ERROR` | Missing, unreadable, or invalid body |
+| 401 | `INVALID_TOKEN` | Missing or invalid Bearer authentication |
+| 403 | `INSUFFICIENT_PERMISSIONS` | Caller lacks `USER_SUSPEND` |
+| 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED` | Caller account or tenant is suspended |
+| 404 | `PROFILE_NOT_FOUND` | Target is missing, cross-tenant, deleted, or a platform administrator |
+| 409 | `USER_ALREADY_SUSPENDED` | An eligible target is already suspended |
+| 422 | `ROLE_HIERARCHY_VIOLATION` | Target is a peer or has higher rank |
 
-#### Error
-
-```json
-{
-  "error": {
-    "code": "INSUFFICIENT_PERMISSIONS",
-    "message": "You are not authorized to access this endpoint",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-403 Forbidden
-
-Error: INSUFFICIENT_PERMISSIONS
-
-```json
-{
-  "error": {
-    "code": "ROLE_HIERARCHY_VIOLATION",
-    "message": "Cannot suspend a profile with a role equal to or higher than yours",
-    "request_id": "uuid",
-    "details": [
-      {
-        "field": "roles",
-        "input": [
-          "MARKETPLACE_OWNER"
-        ]
-      }
-    ]
-  }
-}
-```
-
-422 Unprocessable Entity
-
-Error: ROLE_HIERARCHY_VIOLATION
-
-```json
-{
-  "error": {
-    "code": "USER_ALREADY_SUSPENDED",
-    "message": "Cannot suspend a user that is suspended",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-422 Unprocessable Entity
-
-Error: USER_ALREADY_SUSPENDED
+A repeated request against a suspended target returns 409 without creating a second audit record. This follows the API standard for state conflicts. Errors use the current shared envelope.
 
 ### 6) Unsuspend user
 

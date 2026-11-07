@@ -179,7 +179,7 @@ Exchanges a valid refresh token for a new access token and refresh token. Neithe
 }
 ```
 
-The service rejects an unknown, invalidated, or expired token and a token whose associated user cannot be found within its stored tenant. It rejects deleted/suspended users and inactive tenants before invalidating the old refresh token and issuing a new pair within the transaction. Access-token expiry is not a prerequisite for refreshing.
+The service rejects an unknown, invalidated, or expired token and a token whose associated user cannot be found within its stored tenant. It rejects deleted/suspended users and inactive tenants before invalidating the old refresh token and issuing a new pair within the transaction. The [suspend endpoint](users.md#5-suspend-user) invalidates the target's refresh sessions, so those tokens return 401 `INVALID_TOKEN` on subsequent refresh attempts. Access-token expiry is not a prerequisite for refreshing.
 
 ### Response
 

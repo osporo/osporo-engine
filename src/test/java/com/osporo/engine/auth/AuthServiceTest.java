@@ -77,7 +77,7 @@ public class AuthServiceTest {
         user.setPasswordHash("hashed_password");
         user.setDeletedAt(OffsetDateTime.now());
         when(tenantContextHolder.getTenantId()).thenReturn(tenantId);
-        when(userRepository.findByEmailAndTenantId("deleted@example.com", tenantId)).thenReturn(Optional.of(user));
+        when(userRepository.findForTokenIssuanceByEmailAndTenantId("deleted@example.com", tenantId)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", user.getPasswordHash())).thenReturn(true);
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("deleted@example.com", "password123")))
@@ -205,7 +205,7 @@ public class AuthServiceTest {
 
         // -- login()
         when(tenantContextHolder.getTenantId()).thenReturn(tenantId);
-        when(userRepository.findByEmailAndTenantId(email, tenantId)).thenReturn(Optional.of(user));
+        when(userRepository.findForTokenIssuanceByEmailAndTenantId(email, tenantId)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches(password, user.getPasswordHash())).thenReturn(true);
 
         // -- issueTokenPair()
@@ -239,7 +239,7 @@ public class AuthServiceTest {
         LoginRequest request = new LoginRequest(email, password);
 
         when(tenantContextHolder.getTenantId()).thenReturn(tenantId);
-        when(userRepository.findByEmailAndTenantId(email, tenantId)).thenReturn(Optional.empty());
+        when(userRepository.findForTokenIssuanceByEmailAndTenantId(email, tenantId)).thenReturn(Optional.empty());
 
         // Act + Assert
         assertThatThrownBy(() -> authService.login(request)).isInstanceOf(AuthenticationFailedException.class);
@@ -258,7 +258,7 @@ public class AuthServiceTest {
         user.setPasswordHash("hashed_password");
 
         when(tenantContextHolder.getTenantId()).thenReturn(tenantId);
-        when(userRepository.findByEmailAndTenantId(email, tenantId)).thenReturn(Optional.of(user));
+        when(userRepository.findForTokenIssuanceByEmailAndTenantId(email, tenantId)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches(password, user.getPasswordHash())).thenReturn(false);
 
         // Act + Assert
@@ -279,7 +279,7 @@ public class AuthServiceTest {
         user.setPasswordHash("hashed_password");
 
         when(tenantContextHolder.getTenantId()).thenReturn(tenantId);
-        when(userRepository.findByEmailAndTenantId(email, tenantId)).thenReturn(Optional.of(user));
+        when(userRepository.findForTokenIssuanceByEmailAndTenantId(email, tenantId)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches(password, user.getPasswordHash())).thenReturn(true);
 
         // Act + Assert
@@ -313,7 +313,7 @@ public class AuthServiceTest {
         buyerRoleConfig.setPermissions(buyerPermissions);
 
         when(refreshTokenRepository.findByToken(request.refreshToken())).thenReturn(Optional.of(oldRefreshToken));
-        when(userRepository.findByIdAndTenantId(oldRefreshToken.getUserId(), tenantId)).thenReturn(Optional.of(user));
+        when(userRepository.findForTokenIssuanceByIdAndTenantId(oldRefreshToken.getUserId(), tenantId)).thenReturn(Optional.of(user));
         when(refreshTokenRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // -- issueTokenPair()
@@ -381,7 +381,7 @@ public class AuthServiceTest {
         refreshToken.setExpiresAt(currentDateTime.plusMinutes(15));
 
         when(refreshTokenRepository.findByToken(request.refreshToken())).thenReturn(Optional.of(refreshToken));
-        when(userRepository.findByIdAndTenantId(refreshToken.getUserId(), refreshToken.getTenantId())).thenReturn(Optional.empty());
+        when(userRepository.findForTokenIssuanceByIdAndTenantId(refreshToken.getUserId(), refreshToken.getTenantId())).thenReturn(Optional.empty());
         
         // Act + Assert
         assertThatThrownBy(() -> authService.refresh(request)).isInstanceOf(InvalidTokenException.class);
@@ -405,7 +405,7 @@ public class AuthServiceTest {
         user.setSuspendedAt(currentDateTime);
 
         when(refreshTokenRepository.findByToken(request.refreshToken())).thenReturn(Optional.of(refreshToken));
-        when(userRepository.findByIdAndTenantId(refreshToken.getUserId(), refreshToken.getTenantId())).thenReturn(Optional.of(user));
+        when(userRepository.findForTokenIssuanceByIdAndTenantId(refreshToken.getUserId(), refreshToken.getTenantId())).thenReturn(Optional.of(user));
         
         // Act + Assert
         doThrow(new AccountSuspendedException()).when(accountStatusService).requireActiveAccount(user);

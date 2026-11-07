@@ -41,6 +41,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -76,7 +77,26 @@ class UserControllerTest {
     private UserService userService;
 
     @MockitoBean
+    private UserSuspensionService userSuspensionService;
+
+    @MockitoBean
     private AccountStatusService accountStatusService;
+
+    @Test
+    void suspendUser_shouldRequirePermissionEvenForAnOwner() throws Exception {
+        String token = jwtService.generateAccessToken(
+                UUID.randomUUID(), UUID.randomUUID(), List.of("MARKETPLACE_OWNER"), List.of("USER_READ_ANY")
+        );
+
+        mockMvc.perform(post("/v1/users/{id}/suspend", UUID.randomUUID())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"violation_type\":\"PAYMENT_FRAUD\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("INSUFFICIENT_PERMISSIONS"));
+
+        verifyNoInteractions(userSuspensionService);
+    }
 
     @Test
     void getOwnProfile_shouldUsePrincipalAndReturnOnlyProfileFields() throws Exception {

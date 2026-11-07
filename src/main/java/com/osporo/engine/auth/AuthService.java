@@ -112,7 +112,7 @@ public class AuthService {
         // Find user by email within this tenant
         // Generic error message intentional — never confirm whether an email exists
         User user = userRepository
-            .findByEmailAndTenantId(request.email().toLowerCase().strip(), tenantId)
+            .findForTokenIssuanceByEmailAndTenantId(request.email().toLowerCase().strip(), tenantId)
             .orElseThrow(() -> new AuthenticationFailedException());
 
         // Verify password
@@ -149,7 +149,7 @@ public class AuthService {
 
         // Load the associated user — verify they are still active
         User user = userRepository
-            .findByIdAndTenantId(stored.getUserId(), stored.getTenantId())
+            .findForTokenIssuanceByIdAndTenantId(stored.getUserId(), stored.getTenantId())
             .orElseThrow(() -> new InvalidTokenException());
 
         accountStatusService.requireActiveAccount(user);

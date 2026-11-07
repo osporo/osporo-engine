@@ -14,7 +14,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 
 ## 1. API surface and versioning
 
-**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements profile reads/updates and the tenant directory; `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
+**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements profiles, the tenant directory, and account suspension. `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
 
 | Method | Path | Request body | Success | Tenant source |
 | --- | --- | --- | --- | --- |
@@ -26,6 +26,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | PATCH | `/v1/users/me` | Optional `display_name`, `avatar_url` | 200; updated own profile and token permissions | Authenticated principal |
 | GET | `/v1/users/{id}` | None | 200; public or full profile according to permission | Principal tenant, or guest `X-Tenant-ID` |
 | GET | `/v1/users` | None | 200; user summaries and pagination; requires `USER_READ_ANY` | Authenticated principal |
+| POST | `/v1/users/{id}/suspend` | `violation_type`, optional `details` | 200; suspension audit record; requires `USER_SUSPEND` | Authenticated principal |
 | GET | `/ping` | None | 200; `pong` | None |
 
 The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. A matcher is not an endpoint implementation: there are no corresponding domain controllers for listings, categories, orders, payments, messaging, or moderation in the reviewed source. Likewise, migrations and permission constants do not establish endpoint availability.
@@ -75,13 +76,13 @@ External identity providers remain a direction in ADR-012, not current API suppo
 
 Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [application properties](../src/main/resources/application.properties), [refresh-token migration](../src/main/resources/db/migration/V10__create_refresh_tokens.sql).
 
-**Phase 6 revocation foundation:** `AuthService.revokeRefreshTokens(userId, tenantId)` invalidates all matching persisted sessions transactionally; it is an internal service operation, not an endpoint. Lifecycle endpoints are still pending. Token versioning is deferred: access is denied while an account/tenant is inactive, but restoring active status can make an old unexpired access token usable again. Revoking refresh sessions alone does not revoke access tokens. Status checks do not serialize requests already in flight with later state changes.
+**Suspension and revocation:** `POST /v1/users/{id}/suspend` records the action, updates the account, and invokes `AuthService.revokeRefreshTokens(userId, tenantId)` in one transaction. Login and refresh take an account lock that conflicts with suspension, so issuance completes before revocation or observes the suspension. Token versioning is deferred. Restoring active status can make an old unexpired access token usable again. Ordinary requests already in flight may complete.
 
 ## 4. Permissions and public access
 
 **Convention for new work:** authorize operations by permission, for example `@PreAuthorize("hasAuthority('LISTING_CREATE')")`, then enforce tenant scope and resource ownership in the service/repository workflow. A permission ending in `_OWN` requires an ownership check; an `_ANY` tenant permission does not grant cross-tenant access. Role labels are not substitutes for permission checks.
 
-**Planned user suspension policy:** require `USER_SUSPEND` and a target in the caller's tenant. The caller's highest currently assigned role must strictly outrank the target's highest currently assigned role. The [suspension hierarchy](features/users.md#suspension-hierarchy) also applies when lifting a suspension.
+**User suspension policy:** require `USER_SUSPEND` and a target in the caller's tenant. The caller's highest currently assigned role must strictly outrank the target's highest currently assigned role. Missing, cross-tenant, deleted, and platform-administrator targets return 404 `PROFILE_NOT_FOUND`. See the [suspension hierarchy and contract](features/users.md#5-suspend-user). Lifting a suspension remains planned.
 
 The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the package named in the original Word document.
 
@@ -182,8 +183,8 @@ Validation message wording may vary. Error responses currently contain no `reque
 | 401 | `AUTHENTICATION_FAILED`, `INVALID_TOKEN`; convention for missing/invalid authentication |
 | 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED`, advice-handled `INSUFFICIENT_PERMISSIONS` |
 | 404 | `TENANT_NOT_FOUND`, own-profile `PROFILE_NOT_FOUND`; `LISTING_NOT_FOUND` exception exists without a listing endpoint |
-| 409 | `EMAIL_ALREADY_EXISTS`; convention for conflicts with current resource state |
-| 422 | Convention for structurally valid requests violating a business rule; no current handler establishes a workflow using it |
+| 409 | `EMAIL_ALREADY_EXISTS`, `USER_ALREADY_SUSPENDED`; convention for conflicts with current resource state |
+| 422 | `ROLE_HIERARCHY_VIOLATION`; convention for structurally valid requests violating a business rule |
 | 500 | Unexpected exceptions |
 
 For new endpoints, keep 409 for resource-state conflicts and 422 for other business-rule failures. The original document used an already-sold listing for both; define one status per concrete error and test it. Tenant-owned resources outside the caller's scope should return 404 without revealing another tenant's resource.
@@ -221,5 +222,7 @@ Directory query validation is covered by [query tests](../src/test/java/com/ospo
 Public/full profile coverage is in [policy tests](../src/test/java/com/osporo/engine/user/UserAuthorizationPolicyTest.java) and [PostgreSQL HTTP integration tests](../src/test/java/com/osporo/engine/user/UserProfileIntegrationTest.java). They cover read-permission precedence, role combinations, hidden account states, tenant resolution/isolation, active-tenant validation, and exact response field sets.
 
 Phase 6 coverage includes [account-status unit tests](../src/test/java/com/osporo/engine/auth/AccountStatusServiceTest.java), [filter tests](../src/test/java/com/osporo/engine/shared/security/JwtAuthenticationFilterTest.java), and [PostgreSQL HTTP/session tests](../src/test/java/com/osporo/engine/auth/AccountStatusIntegrationTest.java). These cover tenant membership, deleted/suspended accounts, inactive tenants, malformed claims, public-route rejection, scoped session revocation, and the deferred-versioning limitation after unsuspension.
+
+Phase 7 suspension coverage checks permission enforcement, highest-role comparisons, tenant and account visibility, invalid payloads, audit persistence, scoped revocation, and duplicate requests. See the [controller tests](../src/test/java/com/osporo/engine/user/UserControllerTest.java), [authorization policy tests](../src/test/java/com/osporo/engine/user/UserAuthorizationPolicyTest.java), and [PostgreSQL HTTP/session tests](../src/test/java/com/osporo/engine/auth/AccountStatusIntegrationTest.java).
 
 For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Explain changes to existing contracts and keep them under `/v1` until the project owner directs otherwise. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.

@@ -6,6 +6,8 @@ import com.osporo.engine.shared.response.Meta;
 import com.osporo.engine.shared.enums.ErrorCode;
 import com.osporo.engine.shared.security.OsporoPrincipal;
 import com.osporo.engine.user.dto.OwnProfileResponse;
+import com.osporo.engine.user.dto.SuspendUserRequest;
+import com.osporo.engine.user.dto.UserSuspensionResponse;
 import com.osporo.engine.user.dto.UpdateUserProfileRequest;
 import com.osporo.engine.user.dto.UserDirectoryQuery;
 import com.osporo.engine.user.dto.UserSummaryResponse;
@@ -17,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -36,15 +39,18 @@ public class UserController {
     private final UserService userService;
     private final UserMapper userMapper;
     private final UserAuthorizationPolicy userAuthorizationPolicy;
+    private final UserSuspensionService userSuspensionService;
 
     public UserController(
             UserService userService,
             UserMapper userMapper,
-            UserAuthorizationPolicy userAuthorizationPolicy
+            UserAuthorizationPolicy userAuthorizationPolicy,
+            UserSuspensionService userSuspensionService
     ) {
         this.userService = userService;
         this.userMapper = userMapper;
         this.userAuthorizationPolicy = userAuthorizationPolicy;
+        this.userSuspensionService = userSuspensionService;
     }
 
     @GetMapping
@@ -104,5 +110,15 @@ public class UserController {
         OwnProfileResponse profile = userMapper.toOwnProfileResponse(user, principal.getPermissions());
 
         return ResponseEntity.ok(ApiResponse.of(profile));
+    }
+
+    @PostMapping("/{id}/suspend")
+    @PreAuthorize("hasAuthority('USER_SUSPEND')")
+    public ResponseEntity<ApiResponse<UserSuspensionResponse>> suspendUser(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal OsporoPrincipal principal,
+            @RequestBody SuspendUserRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(userSuspensionService.suspend(principal, id, request)));
     }
 }
