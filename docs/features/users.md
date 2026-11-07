@@ -24,7 +24,7 @@ Open details from the source:
 
 - `BUSINESS_RULE_VIOLATION` on invitations is not in the current `ErrorCode` enum. Invitation acceptance, token delivery, and validation constraints are not specified here.
 - `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. Phase 4 enforces its public-profile scope; it does not grant directory or private-field access.
-- The suspension hierarchy and handling of multiple roles need precise rules before implementation. An error detail with `input` differs from the current shared `{field, message}` type.
+- The suspension hierarchy is defined below. The source hierarchy error detail uses `input`, which differs from the current shared `{field, message}` type.
 - Deleting or updating one's own account requires authentication and ownership even where the source says no specific permission. The source does not fully define deleted-account token handling.
 
 Editorial corrections: the list example now represents buyer and seller as two role strings, and `ROLE_HIERARCY_VIOLATION` is corrected to `ROLE_HIERARCHY_VIOLATION`.
@@ -439,7 +439,20 @@ For guests, tenant errors are 400 `TENANT_CONTEXT_MISSING` for missing/malformed
 
 `POST /v1/users/{id}/suspend`
 
-This endpoint allows an authorized user to suspend another user account, with the exception that they cannot suspend another user at their level or higher.
+This planned endpoint allows a caller with `USER_SUSPEND` to suspend an account in their own tenant whose rank is strictly lower than theirs.
+
+#### Suspension hierarchy
+
+| Rank, highest first | Roles |
+| --- | --- |
+| Platform administrator | `OSPORO_ADMIN` |
+| Marketplace administrator | `MARKETPLACE_OWNER` |
+| Marketplace staff | `MARKETPLACE_STAFF` |
+| Marketplace participant | `BUYER`, `SELLER` |
+
+Use the highest currently assigned role on each account. For example, a caller with `MARKETPLACE_STAFF` and `SELLER` ranks as staff. They can suspend a buyer or seller if they have `USER_SUSPEND`, but a target with both `MARKETPLACE_STAFF` and `BUYER` ranks as staff and is therefore a peer. Buyer and seller have equal rank. Equal ranks also prevent self-suspension.
+
+The hierarchy sets the rank boundary. Permission to suspend still comes from `USER_SUSPEND`. The top rank protects `OSPORO_ADMIN` accounts from tenant operators and does not grant cross-tenant access or platform moderation powers through this endpoint. The same hierarchy applies to lifting a suspension.
 
 #### Parameters
 
@@ -539,7 +552,7 @@ Error: USER_ALREADY_SUSPENDED
 
 `POST /v1/users/{id}/unsuspend`
 
-This endpoint is used to lift the suspension of another user with a lower role.
+This planned endpoint uses the same [suspension hierarchy](#suspension-hierarchy), tenant boundary, and `USER_SUSPEND` permission to lift a suspension.
 
 #### Parameters
 

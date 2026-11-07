@@ -81,6 +81,8 @@ Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java)
 
 **Convention for new work:** authorize operations by permission, for example `@PreAuthorize("hasAuthority('LISTING_CREATE')")`, then enforce tenant scope and resource ownership in the service/repository workflow. A permission ending in `_OWN` requires an ownership check; an `_ANY` tenant permission does not grant cross-tenant access. Role labels are not substitutes for permission checks.
 
+**Planned user suspension policy:** require `USER_SUSPEND` and a target in the caller's tenant. The caller's highest currently assigned role must strictly outrank the target's highest currently assigned role. The [suspension hierarchy](features/users.md#suspension-hierarchy) also applies when lifting a suspension.
+
 The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the package named in the original Word document.
 
 | Area | Defined constants |

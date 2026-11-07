@@ -2,12 +2,9 @@ package com.osporo.engine.auth;
 
 import com.osporo.engine.auth.dto.*;
 import com.osporo.engine.shared.response.ApiResponse;
-import com.osporo.engine.shared.security.TenantContextHolder;
 import com.osporo.engine.user.model.User;
 
 import jakarta.validation.Valid;
-
-import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
