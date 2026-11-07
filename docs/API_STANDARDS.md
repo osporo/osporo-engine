@@ -75,6 +75,8 @@ Refresh tokens are opaque, randomly generated URL-safe values, stored with a use
 
 Registration checks that the tenant exists and is active. Login checks credentials before account/tenant state; deleted accounts retain the generic 401 `AUTHENTICATION_FAILED` response. Login and refresh both require an active account and tenant. Permissions are resolved from the union of the user's tenant role bundles when issuing tokens, so role changes do not immediately alter existing access tokens.
 
+On a fresh development database, V9 seeds one `MARKETPLACE_OWNER` with `default-marketplace`. The account uses the regular tenant-scoped login and receives the permissions configured for its role by V12. See the [local setup instructions](../README.md#run-with-docker-compose) for the development credentials.
+
 External identity providers remain a direction in ADR-012, not current API support. Automatic suspicious-activity revocation remains deferred.
 
 Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [application properties](../src/main/resources/application.properties), [refresh-token migration](../src/main/resources/db/migration/V10__create_refresh_tokens.sql).

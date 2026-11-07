@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -116,6 +117,53 @@ class AuthControllerIntegrationTest {
         var admin = tenantRoleConfigRepository
             .findByTenantIdAndRoleName(tenantId, RoleType.OSPORO_ADMIN).orElseThrow();
         assertThat(admin.getPermissions()).containsExactly(Permission.PLATFORM_ADMIN);
+    }
+
+    @Test
+    void seededOwner_shouldLogInAndManageUsersInTheDefaultTenant() throws Exception {
+        String loginBody = mockMvc.perform(post("/v1/auth/login")
+                        .header("X-Tenant-ID", tenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new LoginRequest("owner@osporo.example", "OsporoLocalOwner123!"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String accessToken = objectMapper.readTree(loginBody).path("data").path("access_token").asText();
+
+        var claims = jwtService.validateAndExtract(accessToken);
+        assertThat(claims.get("tenant_id", String.class)).isEqualTo(tenantId.toString());
+        assertThat(claims.get("roles", List.class)).containsExactly("MARKETPLACE_OWNER");
+        assertThat(claims.get("permissions", List.class))
+                .contains("USER_READ_ANY", "USER_SUSPEND")
+                .doesNotContain("PLATFORM_ADMIN");
+
+        String authorization = "Bearer " + accessToken;
+        mockMvc.perform(get("/v1/users").param("roles", "MARKETPLACE_OWNER")
+                        .header("Authorization", authorization))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value(claims.getSubject()));
+
+        RegisterRequest buyer = new RegisterRequest("suspension-target@example.com", "password123");
+        String registrationBody = mockMvc.perform(post("/v1/auth/register")
+                        .header("X-Tenant-ID", tenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(buyer)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.roles[0]").value("BUYER"))
+                .andReturn().getResponse().getContentAsString();
+        String buyerId = objectMapper.readTree(registrationBody).path("data").path("id").asText();
+
+        mockMvc.perform(post("/v1/users/{id}/suspend", buyerId)
+                        .header("Authorization", authorization)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"violation_type\":\"LOCAL_TEST\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.action").value("SUSPEND"));
+
+        mockMvc.perform(post("/v1/users/{id}/unsuspend", buyerId).header("Authorization", authorization))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.action").value("UPLIFT"));
     }
 
     @Test

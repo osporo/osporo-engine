@@ -23,7 +23,7 @@ Read the [project vision](docs/PROJECT_VISION.md) for the full context.
 | Roles and permissions | Tenant role configuration is stored in PostgreSQL. Login and refresh resolve permissions from the user's roles and include them in access tokens and Spring Security authorities. |
 | Users and tenants | Own-profile GET/PATCH and permission-based public/full profile reads are implemented. Tenant management REST endpoints remain planned. |
 | API foundations | Request validation, response records, exception handling, and OpenAPI/Swagger dependencies. |
-| Database | Flyway migrations V1–V12, including a default marketplace and role configuration seeds. Schemas also exist for planned marketplace domains. |
+| Database | Flyway migrations V1–V13, including a default marketplace, its development owner, and role configuration seeds. Schemas also exist for planned marketplace domains. |
 | Development and tests | Gradle wrapper, Docker Compose, authentication unit tests, a Spring context test, authentication integration tests using Testcontainers, and a GitHub Actions build workflow. |
 
 Current role categories are `BUYER`, `SELLER`, `MARKETPLACE_STAFF`, `MARKETPLACE_OWNER`, and `OSPORO_ADMIN`. Role configuration storage and permission resolution are implemented; a role-management API and comprehensive authorization across future domains are not.
@@ -96,7 +96,14 @@ docker compose --env-file .env.docker up --build
 
 Compose reads `.env.docker` into the containers, but `env_file` alone does not supply values for the Compose file's `${...}` expressions. The explicit `--env-file` option supplies those values.
 
-Flyway runs on application startup and seeds a default marketplace in a new database.
+Flyway runs on application startup and seeds `default-marketplace` with one `MARKETPLACE_OWNER` in a new development database.
+
+Log in through `POST /v1/auth/login` with the seeded tenant UUID in `X-Tenant-ID` and these development credentials:
+
+- Email `owner@osporo.example`
+- Password `OsporoLocalOwner123!`
+
+Use the owner's access token to list users or suspend and unsuspend a separately registered buyer. If V9 has already been applied, use a fresh development database so Flyway can apply the updated seed.
 
 - API base: [localhost:8080](http://localhost:8080)
 - Ping: [localhost:8080/ping](http://localhost:8080/ping)
@@ -215,7 +222,7 @@ osporo-engine/
 │   └── shared/             Security, configuration, responses, exceptions, enums
 ├── src/main/resources/
 │   ├── application.properties
-│   └── db/migration/       Flyway migrations V1–V12
+│   └── db/migration/       Flyway migrations
 ├── src/test/               Unit, context, and authentication integration tests
 ├── docs/                   Project vision and architecture decision records
 ├── .github/workflows/      CI configuration

@@ -17,7 +17,16 @@ DO $$
                        now()
                    );
 
-            RAISE NOTICE 'Seeded default tenant';
+            INSERT INTO users (tenant_id, email, password_hash, roles, updated_at)
+            VALUES (
+                       v_tenant_id,
+                       'owner@osporo.example',
+                       crypt('OsporoLocalOwner123!', gen_salt('bf', 10)),
+                       ARRAY['MARKETPLACE_OWNER'],
+                       now()
+                   );
+
+            RAISE NOTICE 'Seeded default tenant and marketplace owner';
 
         ELSE
             RAISE NOTICE 'Tenants table already has data, skipping seed.';
