@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -175,6 +176,19 @@ class AccountStatusIntegrationTest {
     }
 
     @Test
+    void refresh_shouldRejectRevokedTokenEvenWhenTheLoadedEntityIsStale() throws Exception {
+        RefreshToken token = createRefreshToken(user.getId(), tenant.getId());
+        authService.revokeRefreshTokens(user.getId(), tenant.getId());
+        assertThat(token.isInvalidated()).isFalse();
+
+        mockMvc.perform(post("/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(token.getToken()))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+    }
+
+    @Test
     void suspension_shouldRecordActionAndRevokeOnlyTargetSessions() throws Exception {
         User actor = createSuspensionActor();
         RefreshToken targetSession = createRefreshToken(user.getId(), tenant.getId());
@@ -231,12 +245,13 @@ class AccountStatusIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
 
-        expectSuspensionError(user.getId(), actorToken, 409, "USER_ALREADY_SUSPENDED");
+        expectSuspensionError("suspend", user.getId(), actorToken, 409, "USER_ALREADY_SUSPENDED");
         assertThat(suspensionCount()).isEqualTo(1);
     }
 
-    @Test
-    void suspension_shouldUseCurrentRanksAndHideUnavailableTargets() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"suspend", "unsuspend"})
+    void suspensionActions_shouldUseCurrentRanksAndHideUnavailableTargets(String action) throws Exception {
         User actor = createSuspensionActor();
         String actorToken = suspensionToken(actor);
         User higherRank = createUser(tenant.getId());
@@ -252,10 +267,10 @@ class AccountStatusIntegrationTest {
         entityManager.clear();
 
         for (User target : List.of(actor, peer, higherRank)) {
-            expectSuspensionError(target.getId(), actorToken, 422, "ROLE_HIERARCHY_VIOLATION");
+            expectSuspensionError(action, target.getId(), actorToken, 422, "ROLE_HIERARCHY_VIOLATION");
         }
         for (UUID id : List.of(platformAdmin.getId(), deleted.getId(), otherTenant.getId(), UUID.randomUUID())) {
-            expectSuspensionError(id, actorToken, 404, "PROFILE_NOT_FOUND");
+            expectSuspensionError(action, id, actorToken, 404, "PROFILE_NOT_FOUND");
         }
 
         assertThat(suspensionCount()).isZero();
@@ -292,12 +307,14 @@ class AccountStatusIntegrationTest {
         );
     }
 
-    private void expectSuspensionError(UUID targetId, String token, int expectedStatus, String errorCode)
+    private void expectSuspensionError(String action, UUID targetId, String token, int expectedStatus, String errorCode)
             throws Exception {
-        mockMvc.perform(post("/v1/users/{id}/suspend", targetId)
-                        .header("Authorization", "Bearer " + token)
-                        .contentType("application/json")
-                        .content("{\"violation_type\":\"PAYMENT_FRAUD\"}"))
+        var request = post("/v1/users/{id}/{action}", targetId, action).header("Authorization", "Bearer " + token);
+        if (action.equals("suspend")) {
+            request.contentType("application/json").content("{\"violation_type\":\"PAYMENT_FRAUD\"}");
+        }
+
+        mockMvc.perform(request)
                 .andExpect(status().is(expectedStatus))
                 .andExpect(jsonPath("$.error.code").value(errorCode));
     }
@@ -309,18 +326,105 @@ class AccountStatusIntegrationTest {
     }
 
     @Test
-    void unsuspension_shouldAllowUnexpiredAccessTokenUntilVersioningIsImplemented() throws Exception {
+    void unsuspension_shouldLinkCurrentSuspensionAndKeepItsRefreshTokenRevoked() throws Exception {
+        User suspendingActor = createSuspensionActor();
+        User liftingActor = createSuspensionActor();
+        String liftingToken = suspensionToken(liftingActor);
+        RefreshToken targetSession = createRefreshToken(user.getId(), tenant.getId());
+
+        String suspensionResponse = mockMvc.perform(post("/v1/users/{id}/suspend", user.getId())
+                        .header("Authorization", "Bearer " + suspensionToken(suspendingActor))
+                        .contentType("application/json")
+                        .content("{\"violation_type\":\"PAYMENT_FRAUD\",\"details\":\"Payment moved off-platform.\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var suspension = objectMapper.readTree(suspensionResponse).get("data");
+
+        String response = mockMvc.perform(post("/v1/users/{id}/unsuspend", user.getId())
+                        .header("Authorization", "Bearer " + liftingToken)
+                        .header("X-Tenant-ID", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("{\"details\":123}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.action").value("UPLIFT"))
+                .andExpect(jsonPath("$.data.user_id").value(user.getId().toString()))
+                .andExpect(jsonPath("$.data.actor_id").value(liftingActor.getId().toString()))
+                .andExpect(jsonPath("$.data.details").value("123"))
+                .andExpect(jsonPath("$.data.suspension.id").value(suspension.get("id").asString()))
+                .andExpect(jsonPath("$.data.suspension.actor_id").value(suspendingActor.getId().toString()))
+                .andExpect(jsonPath("$.data.suspension.violation_type").value("PAYMENT_FRAUD"))
+                .andExpect(jsonPath("$.data.suspension.details").value("Payment moved off-platform."))
+                .andExpect(jsonPath("$.data.suspension.action_date").value(suspension.get("suspended_at").asString()))
+                .andReturn().getResponse().getContentAsString();
+
+        var lift = objectMapper.readTree(response).get("data");
+        entityManager.clear();
+        User restored = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(restored.getSuspendedAt()).isNull();
+        assertThat(restored.getUpdatedAt()).isEqualTo(OffsetDateTime.parse(lift.get("action_date").asString()));
+
+        UUID suspensionId = jdbcClient.sql("""
+                        SELECT suspension_id FROM suspensions
+                        WHERE id = :id AND tenant_id = :tenantId AND user_id = :userId
+                          AND actor_id = :actorId AND action = 'LIFT' AND violation_type IS NULL
+                        """)
+                .param("id", UUID.fromString(lift.get("id").asString()))
+                .param("tenantId", tenant.getId())
+                .param("userId", user.getId())
+                .param("actorId", liftingActor.getId())
+                .query(UUID.class).single();
+        assertThat(suspensionId).isEqualTo(UUID.fromString(suspension.get("id").asString()));
+
+        mockMvc.perform(post("/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(targetSession.getToken()))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+
+        expectSuspensionError("unsuspend", user.getId(), liftingToken, 409, "USER_NOT_SUSPENDED");
+        assertThat(suspensionCount()).isEqualTo(2);
+    }
+
+    @Test
+    void unsuspension_shouldLiftLegacySuspensionWithoutInventingAnOriginalAuditRecord() throws Exception {
+        String actorToken = suspensionToken(createSuspensionActor());
+        RefreshToken legacySession = createRefreshToken(user.getId(), tenant.getId());
         user.setSuspendedAt(OffsetDateTime.now());
         userRepository.saveAndFlush(user);
 
         mockMvc.perform(get("/v1/users/me").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isForbidden());
 
-        user.setSuspendedAt(null);
-        userRepository.saveAndFlush(user);
+        mockMvc.perform(post("/v1/users/{id}/unsuspend", user.getId())
+                        .header("Authorization", "Bearer " + actorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.action").value("UPLIFT"))
+                .andExpect(jsonPath("$.data.details").value(""))
+                .andExpect(jsonPath("$.data.suspension").value(nullValue()));
+
+        entityManager.clear();
+        assertThat(refreshTokenRepository.findById(legacySession.getId()).orElseThrow().isInvalidated()).isTrue();
+        assertThat(suspensionCount()).isEqualTo(1);
 
         mockMvc.perform(get("/v1/users/me").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void unsuspension_shouldRejectDetailsContainingNul() throws Exception {
+        String actorToken = suspensionToken(createSuspensionActor());
+        user.setSuspendedAt(OffsetDateTime.now());
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(post("/v1/users/{id}/unsuspend", user.getId())
+                        .header("Authorization", "Bearer " + actorToken)
+                        .contentType("application/json")
+                        .content("{\"details\":\"invalid\\u0000text\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+        assertThat(suspensionCount()).isZero();
+        assertThat(user.isSuspended()).isTrue();
     }
 
     @Test

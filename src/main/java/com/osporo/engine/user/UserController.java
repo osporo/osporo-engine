@@ -7,11 +7,14 @@ import com.osporo.engine.shared.enums.ErrorCode;
 import com.osporo.engine.shared.security.OsporoPrincipal;
 import com.osporo.engine.user.dto.OwnProfileResponse;
 import com.osporo.engine.user.dto.SuspendUserRequest;
+import com.osporo.engine.user.dto.UnsuspendUserRequest;
 import com.osporo.engine.user.dto.UserSuspensionResponse;
+import com.osporo.engine.user.dto.UserUnsuspensionResponse;
 import com.osporo.engine.user.dto.UpdateUserProfileRequest;
 import com.osporo.engine.user.dto.UserDirectoryQuery;
 import com.osporo.engine.user.dto.UserSummaryResponse;
 import com.osporo.engine.user.model.User;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -120,5 +123,17 @@ public class UserController {
             @RequestBody SuspendUserRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.of(userSuspensionService.suspend(principal, id, request)));
+    }
+
+    @PostMapping("/{id}/unsuspend")
+    @PreAuthorize("hasAuthority('USER_SUSPEND')")
+    public ResponseEntity<ApiResponse<UserUnsuspensionResponse>> unsuspendUser(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal OsporoPrincipal principal,
+            @RequestBody(required = false) @Valid UnsuspendUserRequest request
+    ) {
+        String details = request == null ? null : request.details();
+
+        return ResponseEntity.ok(ApiResponse.of(userSuspensionService.unsuspend(principal, id, details)));
     }
 }

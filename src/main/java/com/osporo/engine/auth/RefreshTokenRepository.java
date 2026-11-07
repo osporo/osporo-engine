@@ -1,5 +1,6 @@
 package com.osporo.engine.auth;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,6 +18,16 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
     Optional<RefreshToken> findByToken(String token);
 
     void deleteByUserIdAndTenantId(UUID userId, UUID tenantId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            UPDATE RefreshToken token
+            SET token.invalidated = true
+            WHERE token.id = :id
+              AND token.invalidated = false
+              AND token.expiresAt >= :now
+            """)
+    int invalidateIfUsable(@Param("id") UUID id, @Param("now") OffsetDateTime now);
 
     @Modifying(flushAutomatically = true)
     @Query("""

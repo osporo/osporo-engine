@@ -14,7 +14,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 
 ## 1. API surface and versioning
 
-**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements profiles, the tenant directory, and account suspension. `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
+**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements profiles, the tenant directory, and both account suspension actions. `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
 
 | Method | Path | Request body | Success | Tenant source |
 | --- | --- | --- | --- | --- |
@@ -27,7 +27,10 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | GET | `/v1/users/{id}` | None | 200; public or full profile according to permission | Principal tenant, or guest `X-Tenant-ID` |
 | GET | `/v1/users` | None | 200; user summaries and pagination; requires `USER_READ_ANY` | Authenticated principal |
 | POST | `/v1/users/{id}/suspend` | `violation_type`, optional `details` | 200; suspension audit record; requires `USER_SUSPEND` | Authenticated principal |
+| POST | `/v1/users/{id}/unsuspend` | Optional `details` | 200; lift audit record and original suspension when available; requires `USER_SUSPEND` | Authenticated principal |
 | GET | `/ping` | None | 200; `pong` | None |
+
+For a manual Jackson coercion check, enable the `jackson-diagnostic` Spring profile and send `POST /diagnostics/jackson-coercion` with a valid Bearer token and `Content-Type: application/json`. The request binds `value` to a Java `String` using the application's regular JSON configuration. Send `{"value": 123}` and inspect `data.value`. A 200 response containing `"123"` shows coercion. A 400 `VALIDATION_ERROR` shows the JSON value was rejected during binding. Use `{"value": "123"}` as the control request.
 
 The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. A matcher is not an endpoint implementation: there are no corresponding domain controllers for listings, categories, orders, payments, messaging, or moderation in the reviewed source. Likewise, migrations and permission constants do not establish endpoint availability.
 
@@ -68,21 +71,21 @@ Access tokens are signed JWTs containing `sub` (user UUID), `tenant_id`, `roles`
 
 Token lifetimes are configured through `JWT_ACCESS_TOKEN_EXPIRY` and `JWT_REFRESH_TOKEN_EXPIRY`, both in **seconds**. There are no application-property defaults. Tests configure 900 seconds and 2,592,000 seconds (15 minutes and 30 days); those values are examples, not guaranteed deployment settings. `expires_in` reports the configured access-token lifetime in seconds.
 
-Refresh tokens are opaque, randomly generated URL-safe values, stored with a user, tenant, expiry, and invalidation flag. Refresh rejects missing, expired, or invalidated tokens, missing/deleted/mismatched accounts, suspended users, and inactive tenants before invalidating the old token and issuing a new pair. Logout invalidates a matching refresh token and silently succeeds when no token matches. Logout does not revoke an already issued access token.
+Refresh tokens are opaque, randomly generated URL-safe values, stored with a user, tenant, expiry, and invalidation flag. Refresh rejects missing, expired, or invalidated tokens, missing/deleted/mismatched accounts, suspended users, and inactive tenants. After acquiring the account lock, refresh atomically claims the old token only if it is still valid, then issues a new pair in the same transaction. Logout invalidates a matching refresh token and silently succeeds when no token matches. Logout does not revoke an already issued access token.
 
 Registration checks that the tenant exists and is active. Login checks credentials before account/tenant state; deleted accounts retain the generic 401 `AUTHENTICATION_FAILED` response. Login and refresh both require an active account and tenant. Permissions are resolved from the union of the user's tenant role bundles when issuing tokens, so role changes do not immediately alter existing access tokens.
 
-External identity providers remain a direction in ADR-012, not current API support. Automatic suspicious-activity revocation and guarantees about concurrent refresh-token reuse are not established by the current implementation or tests.
+External identity providers remain a direction in ADR-012, not current API support. Automatic suspicious-activity revocation remains deferred.
 
 Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [application properties](../src/main/resources/application.properties), [refresh-token migration](../src/main/resources/db/migration/V10__create_refresh_tokens.sql).
 
-**Suspension and revocation:** `POST /v1/users/{id}/suspend` records the action, updates the account, and invokes `AuthService.revokeRefreshTokens(userId, tenantId)` in one transaction. Login and refresh take an account lock that conflicts with suspension, so issuance completes before revocation or observes the suspension. Token versioning is deferred. Restoring active status can make an old unexpired access token usable again. Ordinary requests already in flight may complete.
+**Suspension and revocation:** Both suspension actions record the action, update the account, and invoke `AuthService.revokeRefreshTokens(userId, tenantId)` in one transaction. Login and refresh take an account lock that conflicts with those actions. Refresh rechecks the token during rotation to catch revocation while waiting on the lock. Token versioning is deferred. Restoring active status can make an old unexpired access token usable again. Ordinary requests already in flight may complete.
 
 ## 4. Permissions and public access
 
 **Convention for new work:** authorize operations by permission, for example `@PreAuthorize("hasAuthority('LISTING_CREATE')")`, then enforce tenant scope and resource ownership in the service/repository workflow. A permission ending in `_OWN` requires an ownership check; an `_ANY` tenant permission does not grant cross-tenant access. Role labels are not substitutes for permission checks.
 
-**User suspension policy:** require `USER_SUSPEND` and a target in the caller's tenant. The caller's highest currently assigned role must strictly outrank the target's highest currently assigned role. Missing, cross-tenant, deleted, and platform-administrator targets return 404 `PROFILE_NOT_FOUND`. See the [suspension hierarchy and contract](features/users.md#5-suspend-user). Lifting a suspension remains planned.
+**User suspension policy:** both actions require `USER_SUSPEND` and a target in the caller's tenant. The caller's highest currently assigned role must strictly outrank the target's highest currently assigned role. Missing, cross-tenant, deleted, and platform-administrator targets return 404 `PROFILE_NOT_FOUND`. See the [suspension hierarchy](features/users.md#suspension-hierarchy) and [lift contract](features/users.md#6-unsuspend-user).
 
 The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the package named in the original Word document.
 
@@ -183,7 +186,7 @@ Validation message wording may vary. Error responses currently contain no `reque
 | 401 | `AUTHENTICATION_FAILED`, `INVALID_TOKEN`; convention for missing/invalid authentication |
 | 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED`, advice-handled `INSUFFICIENT_PERMISSIONS` |
 | 404 | `TENANT_NOT_FOUND`, own-profile `PROFILE_NOT_FOUND`; `LISTING_NOT_FOUND` exception exists without a listing endpoint |
-| 409 | `EMAIL_ALREADY_EXISTS`, `USER_ALREADY_SUSPENDED`; convention for conflicts with current resource state |
+| 409 | `EMAIL_ALREADY_EXISTS`, `USER_ALREADY_SUSPENDED`, `USER_NOT_SUSPENDED`; convention for conflicts with current resource state |
 | 422 | `ROLE_HIERARCHY_VIOLATION`; convention for structurally valid requests violating a business rule |
 | 500 | Unexpected exceptions |
 
@@ -224,5 +227,7 @@ Public/full profile coverage is in [policy tests](../src/test/java/com/osporo/en
 Phase 6 coverage includes [account-status unit tests](../src/test/java/com/osporo/engine/auth/AccountStatusServiceTest.java), [filter tests](../src/test/java/com/osporo/engine/shared/security/JwtAuthenticationFilterTest.java), and [PostgreSQL HTTP/session tests](../src/test/java/com/osporo/engine/auth/AccountStatusIntegrationTest.java). These cover tenant membership, deleted/suspended accounts, inactive tenants, malformed claims, public-route rejection, scoped session revocation, and the deferred-versioning limitation after unsuspension.
 
 Phase 7 suspension coverage checks permission enforcement, highest-role comparisons, tenant and account visibility, invalid payloads, audit persistence, scoped revocation, and duplicate requests. See the [controller tests](../src/test/java/com/osporo/engine/user/UserControllerTest.java), [authorization policy tests](../src/test/java/com/osporo/engine/user/UserAuthorizationPolicyTest.java), and [PostgreSQL HTTP/session tests](../src/test/java/com/osporo/engine/auth/AccountStatusIntegrationTest.java).
+
+Phase 8 coverage checks the same authorization boundaries for lifting a suspension, linked and legacy audit records, duplicate lifts, and refresh-token revocation across restoration. The [auth service tests](../src/test/java/com/osporo/engine/auth/AuthServiceTest.java) cover rejection when a token becomes unusable after its first read.
 
 For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Explain changes to existing contracts and keep them under `/v1` until the project owner directs otherwise. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.

@@ -218,7 +218,7 @@ The service rejects an unknown, invalidated, or expired token and a token whose 
 }
 ```
 
-The suspended-account error has the same shape as login. Refresh checks tenant status and user soft deletion before rotation. Sequential reuse of an invalidated token is rejected; concurrent reuse protection and automatic revocation for suspicious activity are not established by the current implementation.
+The suspended-account error has the same shape as login. Refresh checks tenant status and user soft deletion before rotation. The old token is invalidated with a conditional database update after the account lock is acquired. Only a request that claims the still-valid token can issue a replacement. Automatic revocation for suspicious activity remains deferred.
 
 ## 4) Logout
 

@@ -298,6 +298,7 @@ public class AuthServiceTest {
         RefreshRequest request = new RefreshRequest("old_refresh_token");
 
         RefreshToken oldRefreshToken = new RefreshToken();
+        oldRefreshToken.setId(UUID.randomUUID());
         oldRefreshToken.setUserId(UUID.randomUUID());
         oldRefreshToken.setExpiresAt(currentDateTime.plusDays(15));
         oldRefreshToken.setTenantId(tenantId);
@@ -314,6 +315,7 @@ public class AuthServiceTest {
 
         when(refreshTokenRepository.findByToken(request.refreshToken())).thenReturn(Optional.of(oldRefreshToken));
         when(userRepository.findForTokenIssuanceByIdAndTenantId(oldRefreshToken.getUserId(), tenantId)).thenReturn(Optional.of(user));
+        when(refreshTokenRepository.invalidateIfUsable(eq(oldRefreshToken.getId()), any())).thenReturn(1);
         when(refreshTokenRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // -- issueTokenPair()
@@ -330,7 +332,26 @@ public class AuthServiceTest {
         assertThat(result.accessToken()).isEqualTo("new_access_token");
         assertThat(result.refreshToken()).isEqualTo("new_refresh_token");
         assertThat(result.expiresIn()).isEqualTo(900L);
-        assertThat(oldRefreshToken.isInvalidated()).isTrue();
+        verify(refreshTokenRepository).invalidateIfUsable(eq(oldRefreshToken.getId()), any());
+    }
+
+    @Test
+    void refresh_shouldRejectTokenRevokedWhileWaitingForAccountLock() {
+        RefreshRequest request = new RefreshRequest("old_refresh_token");
+        RefreshToken token = new RefreshToken();
+        token.setId(UUID.randomUUID());
+        token.setUserId(UUID.randomUUID());
+        token.setTenantId(tenantId);
+        token.setExpiresAt(OffsetDateTime.now().plusMinutes(15));
+
+        when(refreshTokenRepository.findByToken(request.refreshToken())).thenReturn(Optional.of(token));
+        when(userRepository.findForTokenIssuanceByIdAndTenantId(token.getUserId(), tenantId))
+                .thenReturn(Optional.of(new User()));
+        when(refreshTokenRepository.invalidateIfUsable(eq(token.getId()), any())).thenReturn(0);
+
+        assertThatThrownBy(() -> authService.refresh(request)).isInstanceOf(InvalidTokenException.class);
+        verify(jwtService, never()).generateAccessToken(any(), any(), any(), any());
+        verify(refreshTokenRepository, never()).save(any());
     }
 
     @Test

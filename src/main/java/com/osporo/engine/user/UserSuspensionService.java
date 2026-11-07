@@ -10,6 +10,7 @@ import com.osporo.engine.shared.exception.ProfileNotFoundException;
 import com.osporo.engine.shared.security.OsporoPrincipal;
 import com.osporo.engine.user.dto.SuspendUserRequest;
 import com.osporo.engine.user.dto.UserSuspensionResponse;
+import com.osporo.engine.user.dto.UserUnsuspensionResponse;
 import com.osporo.engine.user.model.User;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -49,6 +51,62 @@ public class UserSuspensionService {
         authorizationPolicy.requireSuspensionPermission(principal);
         request.validate();
 
+        User target = requireEligibleTarget(principal, targetId);
+        if (target.isSuspended()) {
+            throw new OsporoException(
+                    ErrorCode.USER_ALREADY_SUSPENDED, HttpStatus.CONFLICT, "The user is already suspended."
+            );
+        }
+
+        OffsetDateTime suspendedAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
+        target.setSuspendedAt(suspendedAt);
+        target.setUpdatedAt(suspendedAt);
+
+        UUID tenantId = principal.getTenantId();
+        UUID actorId = principal.getUserId();
+        String violationType = request.violationTypeText();
+        String details = request.detailsText();
+        UUID actionId = suspensionRepository.recordSuspension(
+                tenantId, targetId, actorId, violationType, details, suspendedAt
+        );
+        authService.revokeRefreshTokens(targetId, tenantId);
+
+        return new UserSuspensionResponse(actionId, targetId, actorId, "SUSPEND", violationType, details, suspendedAt);
+    }
+
+    @Transactional
+    public UserUnsuspensionResponse unsuspend(OsporoPrincipal principal, UUID targetId, String details) {
+        authorizationPolicy.requireSuspensionPermission(principal);
+
+        User target = requireEligibleTarget(principal, targetId);
+        if (!target.isSuspended()) {
+            throw new OsporoException(
+                    ErrorCode.USER_NOT_SUSPENDED, HttpStatus.CONFLICT, "The user is not suspended."
+            );
+        }
+
+        UUID tenantId = principal.getTenantId();
+        UUID actorId = principal.getUserId();
+        UserUnsuspensionResponse.Suspension suspension = suspensionRepository
+                .findSuspension(tenantId, targetId, target.getSuspendedAt())
+                .map(record -> new UserUnsuspensionResponse.Suspension(
+                        record.id(), record.actorId(), record.violationType(), record.details(), record.actionDate()
+                ))
+                .orElse(null);
+
+        OffsetDateTime actionDate = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
+        String auditDetails = Objects.requireNonNullElse(details, "");
+        UUID suspensionId = suspension == null ? null : suspension.id();
+        UUID actionId = suspensionRepository.recordLift(tenantId, targetId, actorId, auditDetails, actionDate, suspensionId);
+
+        target.setSuspendedAt(null);
+        target.setUpdatedAt(actionDate);
+        authService.revokeRefreshTokens(targetId, tenantId);
+
+        return new UserUnsuspensionResponse(actionId, targetId, actorId, "UPLIFT", auditDetails, actionDate, suspension);
+    }
+
+    private User requireEligibleTarget(OsporoPrincipal principal, UUID targetId) {
         UUID tenantId = principal.getTenantId();
         UUID actorId = principal.getUserId();
         List<User> users = userRepository.lockUsersInTenant(tenantId, List.of(actorId, targetId));
@@ -66,23 +124,7 @@ public class UserSuspensionService {
                 .orElseThrow(ProfileNotFoundException::new);
 
         authorizationPolicy.requireLowerSuspensionRank(actor, target);
-        if (target.isSuspended()) {
-            throw new OsporoException(
-                    ErrorCode.USER_ALREADY_SUSPENDED, HttpStatus.CONFLICT, "The user is already suspended."
-            );
-        }
 
-        OffsetDateTime suspendedAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
-        target.setSuspendedAt(suspendedAt);
-        target.setUpdatedAt(suspendedAt);
-
-        String violationType = request.violationTypeText();
-        String details = request.detailsText();
-        UUID actionId = suspensionRepository.recordSuspension(
-                tenantId, targetId, actorId, violationType, details, suspendedAt
-        );
-        authService.revokeRefreshTokens(targetId, tenantId);
-
-        return new UserSuspensionResponse(actionId, targetId, actorId, "SUSPEND", violationType, details, suspendedAt);
+        return target;
     }
 }

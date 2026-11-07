@@ -82,16 +82,20 @@ class UserControllerTest {
     @MockitoBean
     private AccountStatusService accountStatusService;
 
-    @Test
-    void suspendUser_shouldRequirePermissionEvenForAnOwner() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"suspend", "unsuspend"})
+    void suspensionActions_shouldRequirePermissionEvenForAnOwner(String action) throws Exception {
         String token = jwtService.generateAccessToken(
                 UUID.randomUUID(), UUID.randomUUID(), List.of("MARKETPLACE_OWNER"), List.of("USER_READ_ANY")
         );
 
-        mockMvc.perform(post("/v1/users/{id}/suspend", UUID.randomUUID())
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"violation_type\":\"PAYMENT_FRAUD\"}"))
+        var request = post("/v1/users/{id}/{action}", UUID.randomUUID(), action)
+                .header("Authorization", "Bearer " + token);
+        if (action.equals("suspend")) {
+            request.contentType(MediaType.APPLICATION_JSON).content("{\"violation_type\":\"PAYMENT_FRAUD\"}");
+        }
+
+        mockMvc.perform(request)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("INSUFFICIENT_PERMISSIONS"));
 

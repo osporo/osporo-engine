@@ -154,9 +154,10 @@ public class AuthService {
 
         accountStatusService.requireActiveAccount(user);
 
-        // Invalidate the old refresh token — rotation
-        stored.setInvalidated(true);
-        refreshTokenRepository.save(stored);
+        // The token may have been revoked while this request waited for the account lock.
+        if (refreshTokenRepository.invalidateIfUsable(stored.getId(), OffsetDateTime.now()) == 0) {
+            throw new InvalidTokenException();
+        }
 
         // Issue a fresh token pair
         return issueTokenPair(user, stored.getTenantId());

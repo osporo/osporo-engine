@@ -4,7 +4,7 @@ Source: **Osporo API v1.docx**, User Domain. Converted and checked against the r
 
 Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
 
-**Status:** Partially implemented. `GET /v1/users`, `GET /v1/users/me`, `PATCH /v1/users/me`, `GET /v1/users/{id}`, and `POST /v1/users/{id}/suspend` are implemented. The other three routes remain planned.
+**Status:** Partially implemented. The four directory and profile routes and both suspension actions are implemented. Invitations and self-deletion remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
@@ -22,11 +22,12 @@ Phase 6 (2026-10-23) also aligns login/refresh checks and adds an internal tenan
 
 Phase 7 implements account suspension and uses Phase 6 revocation to invalidate the target's refresh sessions in the same transaction as the suspension.
 
+Phase 8 implements lifting a suspension and links the lift audit record to the active suspension when its original record exists.
+
 Open details from the source:
 
 - `BUSINESS_RULE_VIOLATION` on invitations is not in the current `ErrorCode` enum. Invitation acceptance, token delivery, and validation constraints are not specified here.
 - `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. Phase 4 enforces its public-profile scope; it does not grant directory or private-field access.
-- The suspension hierarchy is defined below. The planned unsuspension error example uses `input`, which differs from the current shared `{field, message}` type.
 - Deleting or updating one's own account requires authentication and ownership even where the source says no specific permission. The source does not fully define deleted-account token handling.
 
 Editorial corrections: the list example now represents buyer and seller as two role strings, and `ROLE_HIERARCY_VIOLATION` is corrected to `ROLE_HIERARCHY_VIOLATION`.
@@ -506,17 +507,15 @@ A repeated request against a suspended target returns 409 without creating a sec
 
 `POST /v1/users/{id}/unsuspend`
 
-This planned endpoint uses the same [suspension hierarchy](#suspension-hierarchy), tenant boundary, and `USER_SUSPEND` permission to lift a suspension.
+**Implemented in Phase 8.** Uses the same [suspension hierarchy](#suspension-hierarchy), tenant boundary, and `USER_SUSPEND` permission as suspension. The operation records a `LIFT` audit entry, clears `suspended_at`, updates `updated_at`, and invalidates any remaining refresh sessions for the target in one transaction. The response uses the action name `UPLIFT`.
 
-#### Parameters
+The lift links to the target's `SUSPEND` record matching the active `suspended_at` timestamp. If the account was suspended without an audit record, the lift still succeeds and returns `suspension: null`. The lift records its own details and date. Its violation type is available through the linked suspension, when present.
 
-No params
+Revoked refresh tokens remain invalid. The restored account can sign in again. An existing unexpired access token can also work again because access-token versioning is deferred.
 
-#### Permissions
+#### Request
 
-USER_SUSPEND
-
-#### Requests
+Use the target's UUID as `id`. The body and `details` are optional. Omitted or null details are stored as an empty string. The `details` field binds to a Java `String` using the application's usual Jackson coercion rules. It cannot contain NUL characters.
 
 ```json
 {
@@ -524,7 +523,7 @@ USER_SUSPEND
 }
 ```
 
-#### Response
+#### Response (200 OK)
 
 ```json
 {
@@ -534,71 +533,34 @@ USER_SUSPEND
     "actor_id": "uuid",
     "action": "UPLIFT",
     "details": "Appeal approved",
-    "action_date": "2026-03-18T10:13:32+02:00",
+    "action_date": "2026-03-18T08:13:32Z",
     "suspension": {
       "id": "uuid",
       "actor_id": "uuid",
       "violation_type": "PAYMENT_FRAUD",
       "details": "User attempted to move payment off of the platform.",
-      "action_date": "2026-03-17T09:14:45+02:00"
+      "action_date": "2026-03-17T07:14:45Z"
     }
   },
   "meta": {
-    "request_id": "uuid"
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
 
-#### Success
+#### Errors
 
-200 OK
-
-#### Error
-
-```json
-{
-  "error": {
-    "code": "INSUFFICIENT_PERMISSIONS",
-    "message": "You are not authorized to access this endpoint",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-403 Forbidden
-
-Error: INSUFFICIENT_PERMISSIONS
-
-```json
-{
-  "error": {
-    "code": "ROLE_HIERARCHY_VIOLATION",
-    "message": "Cannot unsuspend a profile with a role equal to or higher than yours",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-422 Unprocessable Entity
-
-Error: ROLE_HIERARCHY_VIOLATION
-
-```json
-{
-  "error": {
-    "code": "USER_NOT_SUSPENDED",
-    "message": "Cannot unsuspend a user that is not suspended",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-422 Unprocessable Entity
-
-Error: USER_NOT_SUSPENDED
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `INVALID_PARAMETER` | Malformed target UUID |
+| 400 | `VALIDATION_ERROR` | Unreadable body or invalid details |
+| 401 | `INVALID_TOKEN` | Missing or invalid Bearer authentication |
+| 403 | `INSUFFICIENT_PERMISSIONS` | Caller lacks `USER_SUSPEND` |
+| 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED` | Caller account or tenant is suspended |
+| 404 | `PROFILE_NOT_FOUND` | Target is missing, cross-tenant, deleted, or a platform administrator |
+| 409 | `USER_NOT_SUSPENDED` | An eligible target is active, including after a successful lift |
+| 422 | `ROLE_HIERARCHY_VIOLATION` | Target is a peer or has higher rank |
 
 ### 7) Update user details
 
