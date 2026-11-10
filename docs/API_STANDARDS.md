@@ -89,6 +89,8 @@ Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java)
 
 **User suspension policy:** both actions require `USER_SUSPEND` and a target in the caller's tenant. The caller's highest currently assigned role must strictly outrank the target's highest currently assigned role. Missing, cross-tenant, deleted, and platform-administrator targets return 404 `PROFILE_NOT_FOUND`. See the [suspension hierarchy](features/users.md#suspension-hierarchy) and [lift contract](features/users.md#6-unsuspend-user).
 
+**Planned staff invitations:** issuance uses the owner's authenticated tenant and requires `USER_INVITE`. Acceptance resolves the tenant and role from the stored invitation. The [invitation plan](features/users.md#1-invite-users) describes manual delivery in development and one-time acceptance.
+
 The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the package named in the original Word document.
 
 | Area | Defined constants |

@@ -26,7 +26,7 @@ Phase 8 implements lifting a suspension and links the lift audit record to the a
 
 Open details from the source:
 
-- `BUSINESS_RULE_VIOLATION` on invitations is not in the current `ErrorCode` enum. Invitation acceptance, token delivery, and validation constraints are not specified here.
+- The [staff invitation plan](#1-invite-users) defines issuance and acceptance for manual delivery in development. Email delivery and invitations for additional owners need separate decisions.
 - `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. Phase 4 enforces its public-profile scope; it does not grant directory or private-field access.
 - Deleting or updating one's own account requires authentication and ownership even where the source says no specific permission. The source does not fully define deleted-account token handling.
 
@@ -37,6 +37,7 @@ Editorial corrections: the list example now represents buyer and seller as two r
 | Endpoint | Operation |
 | --- | --- |
 | `POST /v1/users/invite` | [1) Invite users](#1-invite-users) |
+| `POST /v1/users/invitations/accept` | [Accept an invitation](#accept-an-invitation) |
 | `GET /v1/users` | [2) Get all users (admin level)](#2-get-all-users-admin-level) |
 | `GET /v1/users/me` | [3) Get own profile](#3-get-own-profile) |
 | `GET /v1/users/{id}` | [4) Get user profile](#4-get-user-profile) |
@@ -59,90 +60,80 @@ Editorial corrections: the list example now represents buyer and seller as two r
 
 `POST /v1/users/invite`
 
-This endpoint exists to allow admins to invite users to the platform. Particularly to allow admins to invite staff members to the admin end.
+**Planned.** The first flow lets a marketplace owner invite a new `MARKETPLACE_STAFF` account into their own tenant. The owner delivers a personal token manually in development. Email delivery can later use the same acceptance contract.
 
-#### Parameters
+#### Authorization and tenant
 
-No params
-
-#### Permissions
-
-USER_INVITE
+Require an authenticated `MARKETPLACE_OWNER` with `USER_INVITE`. Use the tenant from the validated principal. The first flow supports exactly one role per invitation, `MARKETPLACE_STAFF`. The tenant must be active and have that role configured. A caller with platform privileges alone cannot issue these tenant invitations.
 
 #### Request
+
+Keep the planned batch request shape. Require a nonempty `invites` array, a valid email per entry, and `roles: ["MARKETPLACE_STAFF"]`. Normalize emails the same way as registration. Reject duplicate normalized emails within the request and validate the entire batch before creating invitations.
 
 ```json
 {
   "invites": [
     {
-      "email": "john@company.com",
-      "roles": [
-        "MARKETPLACE_OWNER"
-      ]
-    },
-    {
-      "email": "jane@company.com",
-      "roles": [
-        "MARKETPLACE_STAFF"
-      ]
+      "email": "staff@example.com",
+      "roles": ["MARKETPLACE_STAFF"]
     }
   ]
 }
 ```
 
-#### Response
+#### Proposed response (200 OK)
+
+Return one result per recipient in request order. A new invitation has status `CREATED` and returns the raw token once for manual delivery. Use `ALREADY_MEMBER` when the email is already registered in the tenant, including soft-deleted accounts whose email remains reserved. Use `ALREADY_INVITED` when an unexpired, unused invitation already exists for the same tenant and email. Both statuses omit the token and expiry. An expired invitation permits a new one.
 
 ```json
 {
   "data": {
     "invites": [
       {
-        "email": "john@company.com",
-        "roles": [
-          "MARKETPLACE_OWNER"
-        ],
-        "status": "SENT"
-      },
-      {
-        "email": "jane@company.com",
-        "roles": [
-          "MARKETPLACE_STAFF"
-        ],
-        "status": "ALREADY_MEMBER"
+        "email": "staff@example.com",
+        "roles": ["MARKETPLACE_STAFF"],
+        "status": "CREATED",
+        "token": "<one-time-invitation-token>",
+        "expires_at": "2026-11-12T10:00:00Z"
       }
-    ],
-    "expires_in": 172800
+    ]
   },
   "meta": {
-    "request_id": "uuid"
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
 
-#### Success
+The proposed expiry is 48 hours, carried over from the source example. The original `202 Accepted` and `SENT` example assumed delivery by the engine. Here `200 OK` reports the result of recording the invitations, and the owner handles delivery.
 
-202 Accepted
+Use the shared error envelope. Return 400 `VALIDATION_ERROR` for invalid input, 401 `INVALID_TOKEN` for missing or invalid authentication, and 403 `INSUFFICIENT_PERMISSIONS` for an authenticated caller without the required authority. A well-formed request for a role outside the allowed staff role returns 422 `ROLE_EXCEEDS_CALLER_PERMISSIONS`.
 
-#### Error
+#### Accept an invitation
+
+`POST /v1/users/invitations/accept`
+
+**Planned.** This route accepts an invitation token as its credential. The recipient submits the token and a password that satisfies the registration password rules. The stored invitation supplies the tenant, normalized email, and role. The recipient sends the request without an `Authorization` header or `X-Tenant-ID`.
 
 ```json
 {
-  "error": {
-    "code": "INSUFFICIENT_PERMISSIONS",
-    "message": "Not authorized to access this endpoint",
-    "request_id": "uuid",
-    "details": []
-  }
+  "token": "<one-time-invitation-token>",
+  "password": "<recipient-chosen-password>"
 }
 ```
 
-403 Forbidden
+Look up the invitation by its token hash. Require an unused, unexpired invitation, an active tenant, and an available staff role. Create the account with a BCrypt password hash and consume the invitation in the same transaction. Return `201 Created` with the new user's `id`, `email`, `roles`, and `tenant_id` in `data`, using the shared response envelope. The recipient can then call the existing login endpoint with that tenant UUID.
 
-Error: INSUFFICIENT_PERMISSIONS
+The proposed 400 `INVALID_INVITATION` code covers unknown, expired, consumed, or otherwise unusable invitations with a common response. Invalid request fields return 400 `VALIDATION_ERROR`. If the email was registered after issuance, return 409 `EMAIL_ALREADY_EXISTS`. Account creation must preserve tenant-local email uniqueness even if acceptance and public registration race.
 
-422 Unprocessable Entity
+#### Implementation and verification plan
 
-Error: BUSINESS_RULE_VIOLATION
+1. Add a Flyway migration for tenant-scoped invitations. Store the inviting user's ID, normalized email, assigned role, token digest, creation and expiry timestamps, and when the token was consumed. Use a cryptographically random token and a unique digest. Keep raw tokens out of persisted records and logs.
+2. Implement issuance with a database guarantee that overlapping requests for the same tenant and email produce at most one pending invitation. An account in a different tenant does not block issuance.
+3. Implement acceptance so concurrent redemptions can create at most one account. Reuse the existing password encoder, email normalization, and account creation rules. Verify that a rollback leaves the invitation redeemable and that a successful commit prevents reuse.
+4. In Postman, log in as the seeded owner, issue one staff invitation, and copy its token into the acceptance request. Log in as the new staff user and verify that `GET /v1/users/me` reflects the configured staff permissions. With the seeded permissions, verify that staff can suspend a buyer and that suspending the owner fails the hierarchy check.
+
+Before implementation, agree on a maximum batch size and whether pending invitations stay redeemable when the inviter loses access. The first flow handles new accounts. Role changes for existing accounts, co-owner invitations, and resend or revocation are separate decisions.
 
 ### 2) Get all users (admin level)
 
