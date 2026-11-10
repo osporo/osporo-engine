@@ -23,7 +23,7 @@ Read the [project vision](docs/PROJECT_VISION.md) for the full context.
 | Roles and permissions | Tenant role configuration is stored in PostgreSQL. Login and refresh resolve permissions from the user's roles and include them in access tokens and Spring Security authorities. |
 | Users and tenants | Own-profile GET/PATCH and permission-based public/full profile reads are implemented. Tenant management REST endpoints remain planned. |
 | API foundations | Request validation, response records, exception handling, and OpenAPI/Swagger dependencies. |
-| Database | Flyway migrations V1–V13, including a default marketplace, its development owner, and role configuration seeds. Schemas also exist for planned marketplace domains. |
+| Database | Flyway migrations V1–V14, including a default marketplace, development accounts, and role configuration seeds. Schemas also exist for planned marketplace domains. |
 | Development and tests | Gradle wrapper, Docker Compose, authentication unit tests, a Spring context test, authentication integration tests using Testcontainers, and a GitHub Actions build workflow. |
 
 Current role categories are `BUYER`, `SELLER`, `MARKETPLACE_STAFF`, `MARKETPLACE_OWNER`, and `OSPORO_ADMIN`. Role configuration storage and permission resolution are implemented; a role-management API and comprehensive authorization across future domains are not.
@@ -96,14 +96,17 @@ docker compose --env-file .env.docker up --build
 
 Compose reads `.env.docker` into the containers, but `env_file` alone does not supply values for the Compose file's `${...}` expressions. The explicit `--env-file` option supplies those values.
 
-Flyway runs on application startup and seeds `default-marketplace` with one `MARKETPLACE_OWNER` in a new development database.
+Flyway runs on application startup and seeds `default-marketplace` and its development accounts.
 
-Log in through `POST /v1/auth/login` with the seeded tenant UUID in `X-Tenant-ID` and these development credentials:
+Log in through `POST /v1/auth/login` with the seeded tenant UUID in `X-Tenant-ID` and the shared development password `OsporoLocalOwner123!`.
 
-- Email `owner@osporo.example`
-- Password `OsporoLocalOwner123!`
+| Email | Role |
+| --- | --- |
+| `owner@osporo.example` | `MARKETPLACE_OWNER` |
+| `staff@osporo.example` | `MARKETPLACE_STAFF` |
+| `seller@osporo.example` | `SELLER` |
 
-Use the owner's access token to list users or suspend and unsuspend a separately registered buyer. If V9 has already been applied, use a fresh development database so Flyway can apply the updated seed.
+V14 adds staff and seller accounts to an existing `default-marketplace` database with up-to-date migrations. It skips an account if its email is already registered in that tenant. Use the owner's access token to list users or suspend and unsuspend a separately registered buyer. If the database still has the older V9 checksum from before the owner seed, use a fresh development database.
 
 - API base: [localhost:8080](http://localhost:8080)
 - Ping: [localhost:8080/ping](http://localhost:8080/ping)

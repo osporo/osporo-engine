@@ -11,6 +11,7 @@ import com.osporo.engine.shared.exception.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -164,6 +165,30 @@ class AuthControllerIntegrationTest {
         mockMvc.perform(post("/v1/users/{id}/unsuspend", buyerId).header("Authorization", authorization))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.action").value("UPLIFT"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "staff@osporo.example, MARKETPLACE_STAFF, USER_SUSPEND, LISTING_CREATE",
+            "seller@osporo.example, SELLER, LISTING_CREATE, USER_SUSPEND"
+    })
+    void seededStaffAndSeller_shouldLogInWithTheirConfiguredRole(
+            String email, String role, String expectedPermission, String excludedPermission
+    ) throws Exception {
+        String loginBody = mockMvc.perform(post("/v1/auth/login")
+                        .header("X-Tenant-ID", tenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(email, "OsporoLocalOwner123!"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String accessToken = objectMapper.readTree(loginBody).path("data").path("access_token").asText();
+
+        var claims = jwtService.validateAndExtract(accessToken);
+        assertThat(claims.get("tenant_id", String.class)).isEqualTo(tenantId.toString());
+        assertThat(claims.get("roles", List.class)).containsExactly(role);
+        assertThat(claims.get("permissions", List.class))
+                .contains(expectedPermission)
+                .doesNotContain(excludedPermission, "PLATFORM_ADMIN");
     }
 
     @Test
