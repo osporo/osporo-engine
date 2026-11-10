@@ -4,7 +4,7 @@ Source: **Osporo API v1.docx**, User Domain. Converted and checked against the r
 
 Design updated: 2026-10-20. The role catalogue and profile visibility policy below supersede the corresponding tables in the original document.
 
-**Status:** Partially implemented. The four directory and profile routes and both suspension actions are implemented. Invitations and self-deletion remain planned.
+**Status:** Partially implemented. The directory, profile, suspension, and self-deletion routes are implemented. Invitations remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
@@ -24,11 +24,12 @@ Phase 7 implements account suspension and uses Phase 6 revocation to invalidate 
 
 Phase 8 implements lifting a suspension and links the lift audit record to the active suspension when its original record exists.
 
+Phase 9 implements account self-deletion, protects the last active tenant owner, and revokes the deleted account's refresh sessions.
+
 Open details from the source:
 
 - The [staff invitation plan](#1-invite-users) defines issuance and acceptance for manual delivery in development. Email delivery and invitations for additional owners need separate decisions.
 - `USER_READ_PUBLIC` exists in the permission enum and V12 seeds it for `BUYER` and `SELLER`. Login and refresh include it when resolving those seeded bundles. Phase 4 enforces its public-profile scope; it does not grant directory or private-field access.
-- Deleting or updating one's own account requires authentication and ownership even where the source says no specific permission. The source does not fully define deleted-account token handling.
 
 Editorial corrections: the list example now represents buyer and seller as two role strings, and `ROLE_HIERARCY_VIOLATION` is corrected to `ROLE_HIERARCHY_VIOLATION`.
 
@@ -636,56 +637,23 @@ Missing or rejected authentication returns 401 `INVALID_TOKEN`. Missing/deleted 
 
 `DELETE /v1/users/me`
 
-The delete user endpoints allows a user to delete their own account. The user account won’t be fully deleted off of the system, however the deleted_at value will be set, and all the user’s listings will no longer be visible, and the account won’t be discoverable.
+**Implemented in Phase 9.** Soft-deletes the authenticated account selected by the signed principal's user and tenant IDs. The request has no parameters or body and requires an active account in an active tenant. Authentication is sufficient. Caller-supplied user IDs or tenant headers cannot select a different account.
 
-#### Parameters
+Sets `deleted_at` and `updated_at`, revokes the account's refresh sessions in the same transaction, and returns `204 No Content`. The stored account and its tenant-local email reservation are retained. Login, refresh, and authenticated requests fail after deletion. Profile reads hide the account, and the directory excludes it by default. Operators with `USER_READ_ANY` can still use the directory's `DELETED` or `ALL` filter to retrieve its summary.
 
-No params
+#### Last active owner
 
-#### Permissions
+A `MARKETPLACE_OWNER` can delete their account only when another active tenant owner remains. Suspended, deleted, platform-administrator, and other-tenant accounts do not satisfy the guard. The engine locks the account and active owner rows in a consistent order, so two owners deleting concurrently cannot both leave the tenant without an active owner.
 
-None
+#### Errors
 
-#### Request
+| Status | Code | Condition |
+| --- | --- | --- |
+| 401 | `INVALID_TOKEN` | Missing or invalid authentication, including a retry with the deleted account's token |
+| 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED` | Caller account or tenant is suspended |
+| 409 | `LAST_MARKETPLACE_OWNER` | Deletion would remove the tenant's last active owner |
 
-No body
+#### Deferred listings and orders integrations
 
-#### Response
-
-No body
-
-#### Success
-
-204 No Content
-
-#### Error
-
-```json
-{
-  "error": {
-    "code": "PROFILE_NOT_FOUND",
-    "message": "Requested profile not found",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-404 Not Found
-
-Error: PROFILE_NOT_FOUND
-
-```json
-{
-  "error": {
-    "code": "ACTIVE_ORDERS_EXIST",
-    "message": "Account cannot be deleted while orders are in progress",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-422 Unprocessable Entity
-
-Error: ACTIVE_ORDERS_EXIST
+- [Listings](listings.md) must exclude deleted sellers' listings from public results when listing visibility is implemented.
+- [Orders](orders.md) must define which buyer and seller order states block deletion and wire the `ACTIVE_ORDERS_EXIST` error into this route. Coordinate the check with order creation so a new active order cannot race with deletion.

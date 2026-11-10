@@ -34,4 +34,17 @@ public interface UserRepository extends JpaRepository<User, UUID>, UserDirectory
             ORDER BY u.id
             """)
     List<User> lockUsersInTenant(@Param("tenantId") UUID tenantId, @Param("userIds") List<UUID> userIds);
+
+    @Query(value = """
+            SELECT u.* FROM users u
+            WHERE u.tenant_id = :tenantId
+              AND (u.id = :userId OR (
+                  u.deleted_at IS NULL AND u.suspended_at IS NULL
+                  AND 'MARKETPLACE_OWNER' = ANY(u.roles)
+                  AND NOT ('OSPORO_ADMIN' = ANY(u.roles))
+              ))
+            ORDER BY u.id
+            FOR UPDATE
+            """, nativeQuery = true)
+    List<User> lockAccountAndActiveOwners(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId);
 }

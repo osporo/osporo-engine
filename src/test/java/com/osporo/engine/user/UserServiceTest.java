@@ -1,5 +1,7 @@
 package com.osporo.engine.user;
 
+import com.osporo.engine.auth.AccountStatusService;
+import com.osporo.engine.auth.AuthService;
 import com.osporo.engine.shared.enums.ErrorCode;
 import com.osporo.engine.shared.exception.OsporoException;
 import com.osporo.engine.shared.exception.ProfileNotFoundException;
@@ -46,6 +48,12 @@ class UserServiceTest {
 
     @Mock
     private TenantRepository tenantRepository;
+
+    @Mock
+    private AccountStatusService accountStatusService;
+
+    @Mock
+    private AuthService authService;
 
     private final UserAuthorizationPolicy userAuthorizationPolicy = new UserAuthorizationPolicy();
 
@@ -144,6 +152,42 @@ class UserServiceTest {
 
         verify(userRepository).findByIdAndTenantId(userId, tenantId);
         verifyNoMoreInteractions(userRepository);
+    }
+
+    @Test
+    void deleteOwnAccount_shouldMarkThePrincipalsAccountDeletedAndRevokeItsSessions() {
+        UUID userId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        OsporoPrincipal principal = new OsporoPrincipal(userId, tenantId, List.of());
+        User user = new User();
+        user.setId(userId);
+        user.setRoles(List.of(RoleType.BUYER));
+        when(userRepository.lockAccountAndActiveOwners(tenantId, userId)).thenReturn(List.of(user));
+
+        createUserService().deleteOwnAccount(principal);
+
+        assertThat(user.getDeletedAt()).isNotNull().isEqualTo(user.getUpdatedAt());
+        verify(accountStatusService).requireActiveAccount(user);
+        verify(authService).revokeRefreshTokens(userId, tenantId);
+    }
+
+    @Test
+    void deleteOwnAccount_shouldRejectTheLastMarketplaceOwnerWithoutChangingItsSessions() {
+        UUID userId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        OsporoPrincipal principal = new OsporoPrincipal(userId, tenantId, List.of());
+        User user = new User();
+        user.setId(userId);
+        user.setRoles(List.of(RoleType.BUYER, RoleType.MARKETPLACE_OWNER));
+        when(userRepository.lockAccountAndActiveOwners(tenantId, userId)).thenReturn(List.of(user));
+
+        assertThatThrownBy(() -> createUserService().deleteOwnAccount(principal))
+                .isInstanceOfSatisfying(OsporoException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.LAST_MARKETPLACE_OWNER);
+                    assertThat(exception.getHttpStatus()).isEqualTo(HttpStatus.CONFLICT);
+                });
+        assertThat(user.getDeletedAt()).isNull();
+        verifyNoInteractions(authService);
     }
 
     @Test
@@ -255,7 +299,9 @@ class UserServiceTest {
                 userRepository,
                 tenantContextHolder,
                 tenantRepository,
-                userAuthorizationPolicy
+                userAuthorizationPolicy,
+                accountStatusService,
+                authService
         );
     }
 

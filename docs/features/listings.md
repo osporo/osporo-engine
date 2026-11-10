@@ -19,6 +19,7 @@ Open details from the source:
 - Takedown mentions operator reinstatement, but the source supplies no reinstatement endpoint.
 - Own-listings access says sellers only while naming `LISTING_READ`, which is also seeded for buyers. Define the intended permission and ownership policy without relying on a role label alone.
 - All `_OWN` actions must check listing ownership and tenant scope. Matching an image UUID must also establish that it belongs to the scoped listing.
+- Public listing queries must exclude listings owned by deleted sellers when implementing visibility. See [account self-deletion](users.md#8-delete-user).
 - Repeated actions and active-order conflicts use 422 below; resolve any differences from the shared 409/422 convention when implementing them.
 
 Editorial corrections: missing closing backticks in the unpublish and mark-sold response descriptions are repaired.

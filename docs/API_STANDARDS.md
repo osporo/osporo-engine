@@ -24,6 +24,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | POST | `/v1/auth/logout` | `refresh_token` | 204; no body | Refresh token lookup |
 | GET | `/v1/users/me` | None | 200; own profile and token permissions | Authenticated principal |
 | PATCH | `/v1/users/me` | Optional `display_name`, `avatar_url` | 200; updated own profile and token permissions | Authenticated principal |
+| DELETE | `/v1/users/me` | None | 204; soft-deletes the caller and revokes their refresh sessions | Authenticated principal |
 | GET | `/v1/users/{id}` | None | 200; public or full profile according to permission | Principal tenant, or guest `X-Tenant-ID` |
 | GET | `/v1/users` | None | 200; user summaries and pagination; requires `USER_READ_ANY` | Authenticated principal |
 | POST | `/v1/users/{id}/suspend` | `violation_type`, optional `details` | 200; suspension audit record; requires `USER_SUSPEND` | Authenticated principal |
@@ -82,6 +83,8 @@ External identity providers remain a direction in ADR-012, not current API suppo
 Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java), [auth service](../src/main/java/com/osporo/engine/auth/AuthService.java), [application properties](../src/main/resources/application.properties), [refresh-token migration](../src/main/resources/db/migration/V10__create_refresh_tokens.sql).
 
 **Suspension and revocation:** Both suspension actions record the action, update the account, and invoke `AuthService.revokeRefreshTokens(userId, tenantId)` in one transaction. Login and refresh take an account lock that conflicts with those actions. Refresh rechecks the token during rotation to catch revocation while waiting on the lock. Token versioning is deferred. Restoring active status can make an old unexpired access token usable again. Ordinary requests already in flight may complete.
+
+**Self-deletion:** `DELETE /v1/users/me` locks and soft-deletes the caller's tenant account and revokes refresh sessions in the same transaction. A marketplace owner can delete their account only if another active owner remains. An old access token receives 401 `INVALID_TOKEN` after deletion. See the [deletion contract and deferred integrations](features/users.md#8-delete-user).
 
 ## 4. Permissions and public access
 
@@ -185,12 +188,12 @@ Validation message wording may vary. Error responses currently contain no `reque
 | --- | --- |
 | 200 | Login and refresh; convention for successful reads and updates |
 | 201 | Registration; convention for resource creation |
-| 204 | Logout; convention for successful deletion, always without a body |
+| 204 | Logout and self-deletion, always without a body |
 | 400 | Validation failures and missing tenant context; convention for malformed inputs |
 | 401 | `AUTHENTICATION_FAILED`, `INVALID_TOKEN`; convention for missing/invalid authentication |
 | 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED`, advice-handled `INSUFFICIENT_PERMISSIONS` |
 | 404 | `TENANT_NOT_FOUND`, own-profile `PROFILE_NOT_FOUND`; `LISTING_NOT_FOUND` exception exists without a listing endpoint |
-| 409 | `EMAIL_ALREADY_EXISTS`, `USER_ALREADY_SUSPENDED`, `USER_NOT_SUSPENDED`; convention for conflicts with current resource state |
+| 409 | `EMAIL_ALREADY_EXISTS`, `USER_ALREADY_SUSPENDED`, `USER_NOT_SUSPENDED`, `LAST_MARKETPLACE_OWNER`; convention for conflicts with current resource state |
 | 422 | `ROLE_HIERARCHY_VIOLATION`; convention for structurally valid requests violating a business rule |
 | 500 | Unexpected exceptions |
 
@@ -233,5 +236,7 @@ Phase 6 coverage includes [account-status unit tests](../src/test/java/com/ospor
 Phase 7 suspension coverage checks permission enforcement, highest-role comparisons, tenant and account visibility, invalid payloads, audit persistence, scoped revocation, and duplicate requests. See the [controller tests](../src/test/java/com/osporo/engine/user/UserControllerTest.java), [authorization policy tests](../src/test/java/com/osporo/engine/user/UserAuthorizationPolicyTest.java), and [PostgreSQL HTTP/session tests](../src/test/java/com/osporo/engine/auth/AccountStatusIntegrationTest.java).
 
 Phase 8 coverage checks the same authorization boundaries for lifting a suspension, linked and legacy audit records, duplicate lifts, and refresh-token revocation across restoration. The [auth service tests](../src/test/java/com/osporo/engine/auth/AuthServiceTest.java) cover rejection when a token becomes unusable after its first read.
+
+Phase 9 coverage checks principal-scoped deletion, profile visibility, login and token rejection, scoped session revocation, and the last-active-owner guard under concurrent requests. See the [user service tests](../src/test/java/com/osporo/engine/user/UserServiceTest.java) and [PostgreSQL HTTP tests](../src/test/java/com/osporo/engine/auth/AccountStatusIntegrationTest.java).
 
 For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Explain changes to existing contracts and keep them under `/v1` until the project owner directs otherwise. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.

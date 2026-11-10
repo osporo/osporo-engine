@@ -17,6 +17,7 @@ Open details from the source:
 - `IN_PERSON` fulfillment is absent from this state diagram although it appears in ADR-007. Service completion and escrow-release timing also need one consistent definition.
 - `LISTING_NOT_ACTIVE` is not in the current `ErrorCode` enum. Existing constants do not establish implemented errors or transitions.
 - Lifecycle mutations reuse read permissions in the design. Before implementation, confirm the participant/action policy and tenant ownership checks; do not infer mutation authority from read access alone.
+- Define which buyer and seller order states block [account self-deletion](users.md#8-delete-user), and coordinate the deletion check with order creation.
 - The source webhook URL includes `{tenantId}` and has no JWT. Its tenant routing is an exception to the ordinary authenticated-domain rule and must be bound to verified provider configuration and event ownership, not trusted solely from the URL.
 - The source says to return 200 for every webhook outcome. Do not treat that as an approved production retry policy: before implementation, define signature-failure handling and durable acceptance/retry behavior. Acknowledging a transient processing failure before durable acceptance can lose an event. Preserve the source proposal below for review.
 - Idempotency headers are planned, not enforced; implementation must define scoped keys, duplicate payload handling, concurrency, and transaction boundaries.

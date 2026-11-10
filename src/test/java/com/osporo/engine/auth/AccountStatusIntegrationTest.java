@@ -22,6 +22,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -31,11 +32,16 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -145,6 +151,92 @@ class AccountStatusIntegrationTest {
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
         }
+    }
+
+    @Test
+    void selfDeletion_shouldUseTheTokenIdentityAndBlockAllAccessAfterDeletion() throws Exception {
+        user.setRoles(List.of(RoleType.SELLER));
+        userRepository.saveAndFlush(user);
+        User otherUser = createUser(createTenant().getId());
+        RefreshToken otherSession = createRefreshToken(otherUser.getId(), otherUser.getTenantId());
+        RefreshToken session = createRefreshToken(user.getId(), tenant.getId());
+        String authorization = "Bearer " + accessToken;
+
+        mockMvc.perform(get("/v1/users/{id}", user.getId()).header("X-Tenant-ID", tenant.getId()))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/v1/users/me").header("X-Tenant-ID", tenant.getId()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/v1/users/me")
+                        .header("Authorization", authorization)
+                        .header("X-Tenant-ID", otherUser.getTenantId())
+                        .param("user_id", otherUser.getId().toString()))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        entityManager.clear();
+        User deleted = userRepository.findByIdAndTenantId(user.getId(), tenant.getId()).orElseThrow();
+        assertThat(deleted.getDeletedAt()).isNotNull().isEqualTo(deleted.getUpdatedAt());
+        assertThat(userRepository.findById(otherUser.getId()).orElseThrow().isDeleted()).isFalse();
+        assertThat(refreshTokenRepository.findById(session.getId()).orElseThrow().isInvalidated()).isTrue();
+        assertThat(refreshTokenRepository.findById(otherSession.getId()).orElseThrow().isInvalidated()).isFalse();
+
+        mockMvc.perform(delete("/v1/users/me").header("Authorization", authorization))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+        mockMvc.perform(get("/v1/users/{id}", user.getId()).header("X-Tenant-ID", tenant.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("PROFILE_NOT_FOUND"));
+        mockMvc.perform(post("/v1/auth/login")
+                        .header("X-Tenant-ID", tenant.getId())
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new LoginRequest(user.getEmail(), "Password123!"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTHENTICATION_FAILED"));
+        mockMvc.perform(post("/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(session.getToken()))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+    }
+
+    @Test
+    void selfDeletion_shouldKeepTheLastActiveOwnerInEachTenant() throws Exception {
+        user.setRoles(List.of(RoleType.MARKETPLACE_OWNER));
+        createOwner(createTenant().getId());
+        User suspendedOwner = createOwner(tenant.getId());
+        suspendedOwner.setSuspendedAt(OffsetDateTime.now());
+        User deletedOwner = createOwner(tenant.getId());
+        deletedOwner.setDeletedAt(OffsetDateTime.now());
+        userRepository.flush();
+        RefreshToken session = createRefreshToken(user.getId(), tenant.getId());
+
+        mockMvc.perform(delete("/v1/users/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("LAST_MARKETPLACE_OWNER"));
+
+        entityManager.clear();
+        assertThat(userRepository.findById(user.getId()).orElseThrow().isDeleted()).isFalse();
+        assertThat(refreshTokenRepository.findById(session.getId()).orElseThrow().isInvalidated()).isFalse();
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void selfDeletion_shouldLeaveOneActiveOwnerWhenTwoOwnersDeleteConcurrently() throws Exception {
+        User firstOwner = createOwner(tenant.getId());
+        User secondOwner = createOwner(tenant.getId());
+        CyclicBarrier start = new CyclicBarrier(2);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> deleteConcurrently(firstOwner, start));
+            var second = executor.submit(() -> deleteConcurrently(secondOwner, start));
+
+            assertThat(List.of(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(204, 409);
+        }
+
+        assertThat(userRepository.findAllById(List.of(firstOwner.getId(), secondOwner.getId())))
+                .filteredOn(User::isDeleted)
+                .hasSize(1);
     }
 
     @Test
@@ -453,6 +545,21 @@ class AccountStatusIntegrationTest {
 
     private String accessToken(UUID userId, UUID tenantId) {
         return jwtService.generateAccessToken(userId, tenantId, List.of("BUYER"), List.of("USER_READ_PUBLIC"));
+    }
+
+    private int deleteConcurrently(User owner, CyclicBarrier start) throws Exception {
+        String token = accessToken(owner.getId(), owner.getTenantId());
+        start.await(10, TimeUnit.SECONDS);
+
+        return mockMvc.perform(delete("/v1/users/me").header("Authorization", "Bearer " + token))
+                .andReturn().getResponse().getStatus();
+    }
+
+    private User createOwner(UUID tenantId) {
+        User owner = createUser(tenantId);
+        owner.setRoles(List.of(RoleType.MARKETPLACE_OWNER));
+
+        return userRepository.saveAndFlush(owner);
     }
 
     private Tenant createTenant() {
