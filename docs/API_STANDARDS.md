@@ -14,7 +14,7 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 
 ## 1. API surface and versioning
 
-**Current contract:** business API routes use `/v1`. `AuthController` implements authentication and `UserController` implements profiles, the tenant directory, and both account suspension actions. `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
+**Current contract:** business API routes use `/v1`. The auth, users, and categories controllers implement the routes below. `/ping` is an unversioned diagnostic endpoint returning the plain string `pong`.
 
 | Method | Path | Request body | Success | Tenant source |
 | --- | --- | --- | --- | --- |
@@ -29,11 +29,12 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | GET | `/v1/users` | None | 200; user summaries and pagination; requires `USER_READ_ANY` | Authenticated principal |
 | POST | `/v1/users/{id}/suspend` | `violation_type`, optional `details` | 200; suspension audit record; requires `USER_SUSPEND` | Authenticated principal |
 | POST | `/v1/users/{id}/unsuspend` | Optional `details` | 200; lift audit record and original suspension when available; requires `USER_SUSPEND` | Authenticated principal |
+| POST | `/v1/categories` | `name`, optional `is_active` | 201; flat category with a tenant-unique slug; requires `CATEGORY_CREATE` | Authenticated principal |
 | GET | `/ping` | None | 200; `pong` | None |
 
 For a manual Jackson coercion check, enable the `jackson-diagnostic` Spring profile and send `POST /diagnostics/jackson-coercion` with a valid Bearer token and `Content-Type: application/json`. The request binds `value` to a Java `String` using the application's regular JSON configuration. Send `{"value": 123}` and inspect `data.value`. A 200 response containing `"123"` shows coercion. A 400 `VALIDATION_ERROR` shows the JSON value was rejected during binding. Use `{"value": "123"}` as the control request.
 
-The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. A matcher is not an endpoint implementation: there are no corresponding domain controllers for listings, categories, orders, payments, messaging, or moderation in the reviewed source. Likewise, migrations and permission constants do not establish endpoint availability.
+The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. Category reads and the listings, orders, payments, messaging, and moderation APIs remain planned.
 
 **Convention for new work:** keep business API routes under `/v1` throughout current engine development, including approved contract changes. Do not introduce `/v2` or another version until the project owner explicitly directs it. Continue to explain compatibility impacts when removing fields, changing semantics, or introducing required inputs, and update clients, documentation, and tests as applicable. Remaining on v1 does not make those changes backward compatible. A release-versioning and deprecation policy can be defined when the owner decides to introduce another API version.
 
@@ -93,6 +94,8 @@ Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java)
 **User suspension policy:** both actions require `USER_SUSPEND` and a target in the caller's tenant. The caller's highest currently assigned role must strictly outrank the target's highest currently assigned role. Missing, cross-tenant, deleted, and platform-administrator targets return 404 `PROFILE_NOT_FOUND`. See the [suspension hierarchy](features/users.md#suspension-hierarchy) and [lift contract](features/users.md#6-unsuspend-user).
 
 **Planned staff invitations:** issuance uses the owner's authenticated tenant and requires `USER_INVITE`. Acceptance resolves the tenant and role from the stored invitation. The [invitation plan](features/users.md#1-invite-users) describes manual delivery in development and one-time acceptance.
+
+**Category creation:** `CATEGORY_CREATE` authorizes creation in the signed principal's tenant. V12 seeds it in the marketplace owner's role bundle. An existing access token retains its previous permissions until login or refresh issues a new token. See the [creation contract](features/categories.md#3-create-category).
 
 The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the package named in the original Word document.
 
@@ -187,13 +190,13 @@ Validation message wording may vary. Error responses currently contain no `reque
 | Status | Current use or convention |
 | --- | --- |
 | 200 | Login and refresh; convention for successful reads and updates |
-| 201 | Registration; convention for resource creation |
+| 201 | Registration and category creation; convention for resource creation |
 | 204 | Logout and self-deletion, always without a body |
 | 400 | Validation failures and missing tenant context; convention for malformed inputs |
 | 401 | `AUTHENTICATION_FAILED`, `INVALID_TOKEN`; convention for missing/invalid authentication |
 | 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED`, advice-handled `INSUFFICIENT_PERMISSIONS` |
 | 404 | `TENANT_NOT_FOUND`, own-profile `PROFILE_NOT_FOUND`; `LISTING_NOT_FOUND` exception exists without a listing endpoint |
-| 409 | `EMAIL_ALREADY_EXISTS`, `USER_ALREADY_SUSPENDED`, `USER_NOT_SUSPENDED`, `LAST_MARKETPLACE_OWNER`; convention for conflicts with current resource state |
+| 409 | `EMAIL_ALREADY_EXISTS`, `USER_ALREADY_SUSPENDED`, `USER_NOT_SUSPENDED`, `LAST_MARKETPLACE_OWNER`, `CATEGORY_SLUG_EXISTS`; convention for conflicts with current resource state |
 | 422 | `ROLE_HIERARCHY_VIOLATION`; convention for structurally valid requests violating a business rule |
 | 500 | Unexpected exceptions |
 
@@ -238,5 +241,7 @@ Phase 7 suspension coverage checks permission enforcement, highest-role comparis
 Phase 8 coverage checks the same authorization boundaries for lifting a suspension, linked and legacy audit records, duplicate lifts, and refresh-token revocation across restoration. The [auth service tests](../src/test/java/com/osporo/engine/auth/AuthServiceTest.java) cover rejection when a token becomes unusable after its first read.
 
 Phase 9 coverage checks principal-scoped deletion, profile visibility, login and token rejection, scoped session revocation, and the last-active-owner guard under concurrent requests. See the [user service tests](../src/test/java/com/osporo/engine/user/UserServiceTest.java) and [PostgreSQL HTTP tests](../src/test/java/com/osporo/engine/auth/AccountStatusIntegrationTest.java).
+
+Category creation coverage checks slug normalization, owner and staff authorization, input validation, flat persistence, and per-tenant uniqueness. See the [service tests](../src/test/java/com/osporo/engine/category/CategoryServiceTest.java) and [PostgreSQL HTTP tests](../src/test/java/com/osporo/engine/category/CategoryIntegrationTest.java).
 
 For each API change, update this reference and the applicable DTOs, validation, error mappings, security rules, and tests together. Record the path, method, tenant source, authentication and permission requirements, ownership rules, request/response shape, and error codes. Move deferred behavior into the current-contract sections only after implementation and verification. Explain changes to existing contracts and keep them under `/v1` until the project owner directs otherwise. This document does not itself change runtime behavior or commit the project to implementing every historical proposal.

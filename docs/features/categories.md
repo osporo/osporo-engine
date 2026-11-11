@@ -2,21 +2,20 @@
 
 Source: **Osporo API v1.docx**, Category Domain. Converted and checked against the repository on 2026-10-19.
 
-**Status:** Planned API; no controller implements these routes.
+**Status:** Partially implemented. Category creation is available. Reads, updates, and status changes remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
 ## Implementation notes and open decisions
 
-No category controller or category service implements these routes. Tenant-specific categories and the behavior below remain planned.
+`POST /v1/categories` creates a flat category in the caller's tenant. V12 seeds `CATEGORY_CREATE` in the marketplace owner's role bundle. Use a fresh development database to apply the updated seed, then log in as the owner to get a token with the permission.
 
 Open details from the source:
 
-- Create returns `is_active`, while read/update examples use `status`. Its response also omits `meta`. A consistent representation must be chosen before implementation.
-- The source assigns creation status 200; shared standards prefer 201 for resource creation. The source value is retained below, pending resolution.
+- Creation uses `is_active` and shared response metadata. Align the planned read and update representations when implementing them.
 - Access to `INACTIVE` or `ALL` is described as admin-only without a precise permission; inactive single-category visibility also needs definition.
-- Slug conflicts and repeated status actions use 422 below; shared standards distinguish state conflicts (409) from other business-rule failures. Resolve each concrete error before implementation.
-- Subcategory support is a design intention, not verified runtime support. No category-delete route is supplied, despite the existing `CATEGORY_DELETE` permission.
+- Category creation returns 409 for slug conflicts. Resolve the status codes for repeated lifecycle actions when implementing those routes.
+- Categories are flat in the MVP. No category-delete route is supplied, despite the existing `CATEGORY_DELETE` permission.
 
 ## Endpoint index
 
@@ -156,17 +155,13 @@ Error: CATEGORY_NOT_FOUND
 
 `POST /v1/categories`
 
-This allows admins to create new categories.
-
-#### Parameters
-
-No params
-
-#### Permissions
-
-CATEGORY_CREATE
+**Implemented.** Requires a valid Bearer token with `CATEGORY_CREATE`. The signed principal supplies the tenant, so a conflicting `X-Tenant-ID` cannot change where the category is created. Each category is created without a parent.
 
 #### Request
+
+`name` is required and must be nonblank and at most 100 characters after trimming. It cannot contain NUL characters. `is_active` is optional and defaults to `true` when omitted or null. Send `false` to create an inactive category.
+
+The engine generates the slug from the name. It lowercases and normalizes the text, keeps Unicode letters, decimal digits, and combining marks, and collapses other characters to hyphens. The slug must contain a letter or digit and fit within 120 characters. Uniqueness applies within the tenant, including inactive categories.
 
 ```json
 {
@@ -175,7 +170,7 @@ CATEGORY_CREATE
 }
 ```
 
-#### Response
+#### Response (201 Created)
 
 ```json
 {
@@ -184,35 +179,24 @@ CATEGORY_CREATE
     "name": "Gadgets and Electronics",
     "slug": "gadgets-and-electronics",
     "is_active": true,
-    "created_at": "2026-03-18T08:37:00+02:00"
+    "created_at": "2026-03-18T06:37:00Z"
+  },
+  "meta": {
+    "requestId": "uuid",
+    "pagination": null
   }
 }
 ```
 
-#### Success
+#### Errors
 
-200 OK
-
-#### Error
-
-```json
-{
-  "error": {
-    "code": "INSUFFICIENT_PERMISSIONS",
-    "message": "You are not authorized to access this endpoint",
-    "request_id": "uuid",
-    "details": []
-  }
-}
-```
-
-403 Forbidden
-
-Error: INSUFFICIENT_PERMISSIONS
-
-422 Unprocessable Entity
-
-Error: CATEGORY_SLUG_EXISTS
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Missing or unreadable body, invalid name, or name that cannot produce a valid slug |
+| 401 | `INVALID_TOKEN` | Missing or invalid authentication |
+| 403 | `INSUFFICIENT_PERMISSIONS` | Caller lacks `CATEGORY_CREATE` |
+| 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED` | Caller account or tenant is suspended |
+| 409 | `CATEGORY_SLUG_EXISTS` | Generated slug is already in use in the tenant |
 
 ### 4) Update category
 

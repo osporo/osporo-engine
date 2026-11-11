@@ -70,6 +70,7 @@ BEGIN
                 'LISTING_TAKEDOWN_ANY',
                 'ORDER_READ_ANY',
                 'ORDER_REFUND',
+                'CATEGORY_CREATE',
                 'USER_READ_ANY',
                 'USER_SUSPEND',
                 'USER_INVITE',
