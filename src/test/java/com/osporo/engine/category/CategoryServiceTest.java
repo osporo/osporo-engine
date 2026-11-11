@@ -28,7 +28,9 @@ class CategoryServiceTest {
     @Test
     void create_shouldNormalizeSlugAndPreserveExplicitInactiveStatus() {
         UUID tenantId = UUID.randomUUID();
-        Category category = new Category(UUID.randomUUID(), "CAFÉ & 家電", "café-家電", false, OffsetDateTime.now());
+        Category category = new Category(
+                UUID.randomUUID(), tenantId, "CAFÉ & 家電", "café-家電", false, OffsetDateTime.now()
+        );
         when(categoryRepository.insert(tenantId, "CAFÉ & 家電", "café-家電", false))
                 .thenReturn(Optional.of(category));
 

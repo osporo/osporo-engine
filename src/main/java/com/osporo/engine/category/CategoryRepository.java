@@ -1,33 +1,29 @@
 package com.osporo.engine.category;
 
 import com.osporo.engine.category.model.Category;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public class CategoryRepository {
+public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
-    private final JdbcClient jdbcClient;
-
-    public CategoryRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
-
-    public Optional<Category> insert(UUID tenantId, String name, String slug, boolean active) {
-        return jdbcClient.sql("""
-                INSERT INTO categories (tenant_id, name, slug, is_active)
-                VALUES (:tenantId, :name, :slug, :active)
-                ON CONFLICT (tenant_id, slug) DO NOTHING
-                RETURNING id, name, slug, is_active AS active, created_at
-                """)
-                .param("tenantId", tenantId)
-                .param("name", name)
-                .param("slug", slug)
-                .param("active", active)
-                .query(Category.class)
-                .optional();
-    }
+    @Transactional
+    @Query(value = """
+            INSERT INTO categories (tenant_id, name, slug, is_active)
+            VALUES (:tenantId, :name, :slug, :active)
+            ON CONFLICT (tenant_id, slug) DO NOTHING
+            RETURNING id, tenant_id, name, slug, is_active, created_at
+            """, nativeQuery = true)
+    Optional<Category> insert(
+            @Param("tenantId") UUID tenantId,
+            @Param("name") String name,
+            @Param("slug") String slug,
+            @Param("active") boolean active
+    );
 }

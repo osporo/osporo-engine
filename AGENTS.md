@@ -32,6 +32,7 @@ Keep roles distinct from permissions. Tenant-configurable roles may govern tenan
 
 ## Implementation Standards
 
+- Map persisted entity models as Jakarta Persistence `@Entity` classes and use Spring Data `JpaRepository` for their repositories. Custom query fragments extend the entity repository's capabilities through composition, as `UserDirectoryRepository` does for `UserRepository`.
 - Add or update unit and integration tests for behavioral changes.
 - Evolve the PostgreSQL schema through Flyway migrations; do not silently edit applied migrations. During current development, edit an existing migration when the project owner explicitly authorizes it for that change; the owner recreates the database volume to reapply migrations. This is not blanket permission to rewrite migrations or delete volumes.
 - Preserve clear API contracts and meaningful, stable error responses.
