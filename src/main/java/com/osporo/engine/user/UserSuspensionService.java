@@ -12,6 +12,8 @@ import com.osporo.engine.user.dto.SuspendUserRequest;
 import com.osporo.engine.user.dto.UserSuspensionResponse;
 import com.osporo.engine.user.dto.UserUnsuspensionResponse;
 import com.osporo.engine.user.model.User;
+import com.osporo.engine.user.model.UserSuspension;
+import com.osporo.engine.user.model.UserSuspension.Action;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,12 +68,14 @@ public class UserSuspensionService {
         UUID actorId = principal.getUserId();
         String violationType = request.violationTypeText();
         String details = request.detailsText();
-        UUID actionId = suspensionRepository.recordSuspension(
-                tenantId, targetId, actorId, violationType, details, suspendedAt
-        );
+        UserSuspension suspension = suspensionRepository.save(new UserSuspension(
+                tenantId, targetId, actorId, Action.SUSPEND, violationType, details, suspendedAt, null
+        ));
         authService.revokeRefreshTokens(targetId, tenantId);
 
-        return new UserSuspensionResponse(actionId, targetId, actorId, "SUSPEND", violationType, details, suspendedAt);
+        return new UserSuspensionResponse(
+                suspension.getId(), targetId, actorId, "SUSPEND", violationType, details, suspendedAt
+        );
     }
 
     @Transactional
@@ -88,22 +92,29 @@ public class UserSuspensionService {
         UUID tenantId = principal.getTenantId();
         UUID actorId = principal.getUserId();
         UserUnsuspensionResponse.Suspension suspension = suspensionRepository
-                .findSuspension(tenantId, targetId, target.getSuspendedAt())
+                .findFirstByTenantIdAndUserIdAndActionAndActionDateOrderByIdAsc(
+                        tenantId, targetId, Action.SUSPEND, target.getSuspendedAt()
+                )
                 .map(record -> new UserUnsuspensionResponse.Suspension(
-                        record.id(), record.actorId(), record.violationType(), record.details(), record.actionDate()
+                        record.getId(), record.getActorId(), record.getViolationType(),
+                        record.getDetails(), record.getActionDate()
                 ))
                 .orElse(null);
 
         OffsetDateTime actionDate = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
         String auditDetails = Objects.requireNonNullElse(details, "");
         UUID suspensionId = suspension == null ? null : suspension.id();
-        UUID actionId = suspensionRepository.recordLift(tenantId, targetId, actorId, auditDetails, actionDate, suspensionId);
+        UserSuspension lift = suspensionRepository.save(new UserSuspension(
+                tenantId, targetId, actorId, Action.LIFT, null, auditDetails, actionDate, suspensionId
+        ));
 
         target.setSuspendedAt(null);
         target.setUpdatedAt(actionDate);
         authService.revokeRefreshTokens(targetId, tenantId);
 
-        return new UserUnsuspensionResponse(actionId, targetId, actorId, "UPLIFT", auditDetails, actionDate, suspension);
+        return new UserUnsuspensionResponse(
+                lift.getId(), targetId, actorId, "UPLIFT", auditDetails, actionDate, suspension
+        );
     }
 
     private User requireEligibleTarget(OsporoPrincipal principal, UUID targetId) {
