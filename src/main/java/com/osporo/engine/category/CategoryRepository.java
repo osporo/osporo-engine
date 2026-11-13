@@ -1,6 +1,8 @@
 package com.osporo.engine.category;
 
 import com.osporo.engine.category.model.Category;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -12,6 +14,14 @@ import java.util.UUID;
 
 @Repository
 public interface CategoryRepository extends JpaRepository<Category, UUID> {
+
+    Page<Category> findAllByTenantId(UUID tenantId, Pageable pageable);
+
+    Page<Category> findAllByTenantIdAndActive(UUID tenantId, boolean active, Pageable pageable);
+
+    long countByTenantId(UUID tenantId);
+
+    long countByTenantIdAndActive(UUID tenantId, boolean active);
 
     @Transactional
     @Query(value = """

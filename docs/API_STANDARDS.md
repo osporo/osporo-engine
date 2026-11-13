@@ -30,11 +30,12 @@ Read [the project vision](PROJECT_VISION.md) and applicable [architecture decisi
 | POST | `/v1/users/{id}/suspend` | `violation_type`, optional `details` | 200; suspension audit record; requires `USER_SUSPEND` | Authenticated principal |
 | POST | `/v1/users/{id}/unsuspend` | Optional `details` | 200; lift audit record and original suspension when available; requires `USER_SUSPEND` | Authenticated principal |
 | POST | `/v1/categories` | `name`, optional `is_active` | 201; flat category with a tenant-unique slug; requires `CATEGORY_CREATE` | Authenticated principal |
+| GET | `/v1/categories` | None | 200; paginated categories, active by default | Principal tenant, or guest `X-Tenant-ID` |
 | GET | `/ping` | None | 200; `pong` | None |
 
 For a manual Jackson coercion check, enable the `jackson-diagnostic` Spring profile and send `POST /diagnostics/jackson-coercion` with a valid Bearer token and `Content-Type: application/json`. The request binds `value` to a Java `String` using the application's regular JSON configuration. Send `{"value": 123}` and inspect `data.value`. A 200 response containing `"123"` shows coercion. A 400 `VALIDATION_ERROR` shows the JSON value was rejected during binding. Use `{"value": "123"}` as the control request.
 
-The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. Category reads and the listings, orders, payments, messaging, and moderation APIs remain planned.
+The four auth routes permit requests without an access token. Security matchers also permit selected listing, category, user, Stripe webhook, documentation, and health paths. Single-category reads and the listings, orders, payments, messaging, and moderation APIs remain planned.
 
 **Convention for new work:** keep business API routes under `/v1` throughout current engine development, including approved contract changes. Do not introduce `/v2` or another version until the project owner explicitly directs it. Continue to explain compatibility impacts when removing fields, changing semantics, or introducing required inputs, and update clients, documentation, and tests as applicable. Remaining on v1 does not make those changes backward compatible. A release-versioning and deprecation policy can be defined when the owner decides to introduce another API version.
 
@@ -96,6 +97,8 @@ Evidence: [JWT service](../src/main/java/com/osporo/engine/auth/JwtService.java)
 **Planned staff invitations:** issuance uses the owner's authenticated tenant and requires `USER_INVITE`. Acceptance resolves the tenant and role from the stored invitation. The [invitation plan](features/users.md#1-invite-users) describes manual delivery in development and one-time acceptance.
 
 **Category creation:** `CATEGORY_CREATE` authorizes creation in the signed principal's tenant. V12 seeds it in the marketplace owner's role bundle. An existing access token retains its previous permissions until login or refresh issues a new token. See the [creation contract](features/categories.md#3-create-category).
+
+**Category listing:** active categories are public within the resolved tenant. `INACTIVE` and `ALL` require `CATEGORY_CREATE` or `CATEGORY_EDIT`. The route uses the shared pagination envelope and returns `is_active` for each category. See the [listing contract](features/categories.md#1-get-all-categories).
 
 The authoritative enum is `com.osporo.engine.shared.enums.Permission`, not the package named in the original Word document.
 

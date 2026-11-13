@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -143,6 +144,95 @@ class CategoryIntegrationTest {
         }
 
         assertThat(jdbcClient.sql("SELECT COUNT(*) FROM categories").query(Long.class).single()).isZero();
+    }
+
+    @Test
+    void list_shouldPaginateOnlyActiveCategoriesInTheGuestsTenant() throws Exception {
+        UUID tenantId = defaultTenantId();
+        insertCategory(tenantId, "Books", true);
+        insertCategory(tenantId, "Art", true);
+        insertCategory(tenantId, "Archived", false);
+        insertCategory(createTenant().getId(), "Another tenant", true);
+
+        mockMvc.perform(get("/v1/categories").header("X-Tenant-ID", tenantId).param("per_page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("Art"))
+                .andExpect(jsonPath("$.data[0].is_active").value(true))
+                .andExpect(jsonPath("$.meta.pagination.page").value(1))
+                .andExpect(jsonPath("$.meta.pagination.perPage").value(1))
+                .andExpect(jsonPath("$.meta.pagination.total").value(2))
+                .andExpect(jsonPath("$.meta.pagination.totalPages").value(2));
+
+        mockMvc.perform(get("/v1/categories").header("X-Tenant-ID", tenantId)
+                        .param("page", String.valueOf(Integer.MAX_VALUE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty())
+                .andExpect(jsonPath("$.meta.pagination.total").value(2));
+    }
+
+    @Test
+    void list_shouldRestrictInactiveFiltersAndUseTheSignedTenant() throws Exception {
+        UUID tenantId = defaultTenantId();
+        UUID otherTenantId = createTenant().getId();
+        insertCategory(tenantId, "Books", true);
+        insertCategory(tenantId, "Archived", false);
+        insertCategory(otherTenantId, "Private archive", false);
+        String ownerToken = login(tenantId, "owner@osporo.example");
+        String staffToken = login(tenantId, "staff@osporo.example");
+
+        mockMvc.perform(get("/v1/categories").header("X-Tenant-ID", tenantId).param("status", "ALL"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("INSUFFICIENT_PERMISSIONS"));
+        mockMvc.perform(get("/v1/categories").header("Authorization", "Bearer " + staffToken)
+                        .param("status", "INACTIVE"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/v1/categories").header("Authorization", "Bearer " + ownerToken)
+                        .header("X-Tenant-ID", otherTenantId).param("status", "INACTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("Archived"))
+                .andExpect(jsonPath("$.data[0].is_active").value(false));
+        mockMvc.perform(get("/v1/categories").header("Authorization", "Bearer " + ownerToken)
+                        .param("status", "ALL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.pagination.total").value(2));
+    }
+
+    @Test
+    void list_shouldRejectInvalidFiltersAndUnavailableGuestTenants() throws Exception {
+        UUID tenantId = defaultTenantId();
+        Tenant suspended = createTenant();
+        suspended.setStatus(TenantStatus.SUSPENDED);
+        tenantRepository.saveAndFlush(suspended);
+
+        mockMvc.perform(get("/v1/categories"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("TENANT_CONTEXT_MISSING"));
+        mockMvc.perform(get("/v1/categories").header("X-Tenant-ID", UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("TENANT_NOT_FOUND"));
+        mockMvc.perform(get("/v1/categories").header("X-Tenant-ID", suspended.getId()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("TENANT_SUSPENDED"));
+
+        for (String query : List.of("page=0", "per_page=101", "status=DELETED", "page=1&page=2")) {
+            mockMvc.perform(get("/v1/categories?" + query).header("X-Tenant-ID", tenantId))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_PARAMETER"));
+        }
+    }
+
+    private void insertCategory(UUID tenantId, String name, boolean active) {
+        jdbcClient.sql("""
+                INSERT INTO categories (tenant_id, name, slug, is_active)
+                VALUES (:tenantId, :name, :slug, :active)
+                """)
+                .param("tenantId", tenantId)
+                .param("name", name)
+                .param("slug", UUID.randomUUID().toString())
+                .param("active", active)
+                .update();
     }
 
     private UUID defaultTenantId() {

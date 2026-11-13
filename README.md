@@ -22,14 +22,14 @@ Read the [project vision](docs/PROJECT_VISION.md) for the full context.
 | Tenant-aware identity | Registration and login resolve users within a tenant. Public auth requests use `X-Tenant-ID`; authenticated requests resolve tenant context from JWT claims. |
 | Roles and permissions | Tenant role configuration is stored in PostgreSQL. Login and refresh resolve permissions from the user's roles and include them in access tokens and Spring Security authorities. |
 | Users and tenants | Own-profile GET/PATCH and permission-based public/full profile reads are implemented. Tenant management REST endpoints remain planned. |
-| Categories | Authorized callers can create flat categories with tenant-unique slugs. |
+| Categories | Authorized callers can create flat categories with tenant-unique slugs. Category listing supports public browsing and permission-gated inactive filters. |
 | API foundations | Request validation, response records, exception handling, and OpenAPI/Swagger dependencies. |
 | Database | Flyway migrations V1–V14, including a default marketplace, development accounts, and role configuration seeds. Schemas also exist for planned marketplace domains. |
 | Development and tests | Gradle wrapper, Docker Compose, authentication unit tests, a Spring context test, authentication integration tests using Testcontainers, and a GitHub Actions build workflow. |
 
 Current role categories are `BUYER`, `SELLER`, `MARKETPLACE_STAFF`, `MARKETPLACE_OWNER`, and `OSPORO_ADMIN`. Role configuration storage and permission resolution are implemented; a role-management API and comprehensive authorization across future domains are not.
 
-Listings, category browsing and updates, orders, payments, escrow, messaging, moderation, reporting, and media storage remain broader targets. Database tables or security route matchers for these areas do not mean their APIs or business workflows exist. Stripe Connect and Cloudflare R2 are documented integration directions, not implemented integrations. Any future escrow-like flow must account for provider capabilities and applicable legal and regulatory requirements.
+Listings, category detail and updates, orders, payments, escrow, messaging, moderation, reporting, and media storage remain broader targets. Database tables or security route matchers for these areas do not mean their APIs or business workflows exist. Stripe Connect and Cloudflare R2 are documented integration directions, not implemented integrations. Any future escrow-like flow must account for provider capabilities and applicable legal and regulatory requirements.
 
 ## Architecture and Engineering Direction
 
@@ -188,6 +188,7 @@ The current REST endpoints are:
 | GET | `/v1/users/{id}` | Returns a public or full profile within an active tenant according to caller permissions. Guests supply `X-Tenant-ID`. |
 | GET | `/v1/users` | Requires `USER_READ_ANY`; returns tenant-scoped user summaries with role/status filters and pagination. |
 | POST | `/v1/categories` | Requires `CATEGORY_CREATE`; creates a flat category in the authenticated tenant and returns 201. |
+| GET | `/v1/categories` | Lists active categories for the tenant by default, with permission-gated inactive filters. |
 
 Registration and login accept an email and password (minimum eight characters) and require the tenant UUID in `X-Tenant-ID`. Discover the seeded tenant UUID in the development database:
 

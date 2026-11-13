@@ -2,7 +2,7 @@
 
 Source: **Osporo API v1.docx**, Category Domain. Converted and checked against the repository on 2026-10-19.
 
-**Status:** Partially implemented. Category creation is available. Reads, updates, and status changes remain planned.
+**Status:** Partially implemented. Category creation and listing are available. Single-category reads, updates, and status changes remain planned.
 
 Read [API standards](../API_STANDARDS.md) for the current wire contract and shared rules, and the [domain index](README.md) for source interpretation. All routes remain under `/v1`. The endpoint descriptions and examples in **Source API design** document the original design, not proof of availability.
 
@@ -12,8 +12,8 @@ Read [API standards](../API_STANDARDS.md) for the current wire contract and shar
 
 Open details from the source:
 
-- Creation uses `is_active` and shared response metadata. Align the planned read and update representations when implementing them.
-- Access to `INACTIVE` or `ALL` is described as admin-only without a precise permission; inactive single-category visibility also needs definition.
+- Creation and listing use `is_active` and shared response metadata. Align the remaining planned representations when implementing them.
+- Inactive single-category visibility still needs definition.
 - Category creation returns 409 for slug conflicts. Resolve the status codes for repeated lifecycle actions when implementing those routes.
 - Categories are flat in the MVP. No category-delete route is supplied, despite the existing `CATEGORY_DELETE` permission.
 
@@ -42,6 +42,8 @@ Open details from the source:
 
 `GET /v1/categories`
 
+**Implemented.** Lists categories for an active tenant, ordered by name ascending and then UUID ascending. An authenticated caller uses the signed tenant context. A guest supplies the tenant UUID in `X-Tenant-ID`.
+
 #### Parameters
 
 | Parameter | Default | Constraints | Description |
@@ -52,7 +54,7 @@ Open details from the source:
 
 #### Permissions
 
-None
+Active categories are public within the resolved tenant. Filtering with `INACTIVE` or `ALL` requires an authenticated caller with `CATEGORY_CREATE` or `CATEGORY_EDIT`. Owners using the seeded role can use both filters through `CATEGORY_CREATE`.
 
 #### Request
 
@@ -65,26 +67,26 @@ No body
   "data": [
     {
       "id": "uuid",
-      "name": "Electronics",
-      "slug": "electronics",
-      "status": "ACTIVE",
+      "name": "Clothing",
+      "slug": "clothing",
+      "is_active": true,
       "created_at": "2026-03-18T11:13:00+02:00"
     },
     {
       "id": "uuid",
-      "name": "Clothing",
-      "slug": "clothing",
-      "status": "ACTIVE",
+      "name": "Electronics",
+      "slug": "electronics",
+      "is_active": true,
       "created_at": "2026-03-18T11:13:00+02:00"
     }
   ],
   "meta": {
-    "request_id": "uuid",
+    "requestId": "uuid",
     "pagination": {
       "page": 1,
-      "per_page": 20,
-      "total": 12,
-      "total_pages": 1
+      "perPage": 20,
+      "total": 2,
+      "totalPages": 1
     }
   }
 }
@@ -92,13 +94,18 @@ No body
 
 #### Success
 
-200 OK
+200 OK. Out-of-range pages return an empty `data` array and retain the filtered total.
 
 #### Error
 
-403 Forbidden
-
-Error: INSUFFICIENT_PERMISSIONS ← only if status=INACTIVE or ALL is requested by a non-admin caller
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `INVALID_PARAMETER` | Invalid, repeated, or unsupported query parameter |
+| 400 | `TENANT_CONTEXT_MISSING` | Guest tenant header is missing or malformed |
+| 401 | `INVALID_TOKEN` | Supplied Bearer token is invalid |
+| 403 | `INSUFFICIENT_PERMISSIONS` | Caller lacks a category permission required for `INACTIVE` or `ALL` |
+| 403 | `ACCOUNT_SUSPENDED`, `TENANT_SUSPENDED` | Caller account or resolved tenant is suspended |
+| 404 | `TENANT_NOT_FOUND` | Guest tenant UUID is unknown |
 
 ### 2) Get single category
 

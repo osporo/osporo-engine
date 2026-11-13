@@ -8,7 +8,7 @@ This directory contains ten domain API references, initially converted from **Os
 | --- | --- | --- |
 | [Authentication](auth.md) | 4 | Current implementation |
 | [Users](users.md) | 9 | 7 directory, profile, suspension, and self-deletion routes implemented; 2 invitation routes planned |
-| [Categories](categories.md) | 6 | Category creation implemented; 5 routes planned |
+| [Categories](categories.md) | 6 | Creation and listing implemented; 4 routes planned |
 | [Listings](listings.md) | 15 | Planned |
 | [Orders](orders.md) | 10 | Planned |
 | [Payments](payments.md) | 4 | Planned |
@@ -19,7 +19,7 @@ This directory contains ten domain API references, initially converted from **Os
 
 ## How to use these references
 
-The original document describes a full API design; it does not establish which features exist. The four auth routes, seven user routes, and category creation are implemented. There are 60 planned routes, including invitation acceptance added after the original conversion. Security matchers, database migrations, enums, or basic services alone do not expose those APIs. The diagnostic `/ping` route is outside this source's domain inventory.
+The original document describes a full API design; it does not establish which features exist. The four auth routes, seven user routes, and two category routes are implemented. There are 59 planned routes, including invitation acceptance added after the original conversion. Security matchers, database migrations, enums, or basic services alone do not expose those APIs. The diagnostic `/ping` route is outside this source's domain inventory.
 
 Read [authentication](auth.md) directly for its implemented contract. For planned domains, read each domain's implementation notes before its source API design. [API standards](../API_STANDARDS.md) describes the current shared contract and overrides conflicting historical conventions; source code and tests establish implemented behavior. [Project vision](../PROJECT_VISION.md) and applicable [ADRs](../adrs/) provide direction. Do not silently resolve an open product or architecture decision by implementing an example literally.
 
